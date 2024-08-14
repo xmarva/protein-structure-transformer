@@ -22,11 +22,16 @@ class ProteinDomainDataset(Dataset):
         self.cath_data = cath_data
         self.esm_alphabet = esm_alphabet
         self.num_workers = num_workers
+        self.processed_dir = os.path.join(root, "graphs")
         super().__init__(root, transform, pre_transform)
 
     @property
     def raw_file_names(self):
         raw_files = os.listdir(os.path.join(self.root, "pdb"))
+        if "processed" in raw_files:
+            raw_files.remove("processed")
+        if "graphs" in raw_files:
+            raw_files.remove("graphs")
         return raw_files
 
     @property
