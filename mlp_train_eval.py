@@ -9,7 +9,7 @@ from models.mlp_model import MLPTrainer
 from dataloaders.mlp_dataloader import prepare_data
 
 def main():
-    input_dim = 320
+    input_dim = 1280
     hidden_dim = 256
     output_dim = 10
     dropout_rate = 0.3
