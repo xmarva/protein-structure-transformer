@@ -6,7 +6,6 @@ from sklearn.model_selection import KFold
 from pytorch_lightning.callbacks import ModelCheckpoint, LearningRateMonitor
 from pytorch_lightning.loggers import CSVLogger
 
-# Update import paths based on the structure of your project
 from models.mlp_model import MLPTrainer
 from dataloaders.mlp_dataloader import prepare_data
 
@@ -20,9 +19,13 @@ def main(args):
     max_epochs = 100
     n_splits = 5  # Number of folds
 
+    # Determine the device
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    print(f"Using device: {device}")
+
     # Load data
-    embeddings = torch.load(f'{args.data_path}/protein_representations.pt')  # Dynamic path
-    labels = torch.tensor(np.load(f'{args.data_path}/labels_cath.npy')).long()  # Dynamic path
+    embeddings = torch.load(f'{args.data_path}/protein_representations.pt').to(device)  # Dynamic path, move to device
+    labels = torch.tensor(np.load(f'{args.data_path}/labels_cath.npy')).long().to(device)  # Dynamic path, move to device
 
     if args.mode == 'train':
         # Initialize K-Fold
@@ -38,8 +41,8 @@ def main(args):
             # Prepare data loaders for this fold
             train_loader, val_loader = prepare_data(embeddings, labels, train_idx, val_idx, batch_size=batch_size)
 
-            # Initialize model
-            model = MLPTrainer(input_dim, hidden_dim, output_dim, dropout_rate)
+            # Initialize model and move it to the device
+            model = MLPTrainer(input_dim, hidden_dim, output_dim, dropout_rate).to(device)
 
             # Initialize CSVLogger
             csv_logger = CSVLogger("logs", name=f"my_mlp_model_fold_{fold+1}")
@@ -69,14 +72,14 @@ def main(args):
 
             # Load the best model checkpoint and validate
             best_model_path = checkpoint_callback.best_model_path
-            best_model = MLPTrainer.load_from_checkpoint(best_model_path, input_dim=input_dim, hidden_dim=hidden_dim, output_dim=output_dim, dropout_rate=dropout_rate)
+            best_model = MLPTrainer.load_from_checkpoint(best_model_path, input_dim=input_dim, hidden_dim=hidden_dim, output_dim=output_dim, dropout_rate=dropout_rate).to(device)
             
             # Evaluate on validation set
             val_loss = trainer.validate(best_model, val_loader)[0]['val_loss']
             validation_scores.append(val_loss)
 
             # Evaluate the model on the entire validation data after training
-            evaluate_model(best_model, val_loader)
+            evaluate_model(best_model, val_loader, device)
 
         # Print the cross-validation results
         avg_val_loss = np.mean(validation_scores)
@@ -87,13 +90,13 @@ def main(args):
         train_idx, val_idx = next(KFold(n_splits=n_splits, shuffle=True, random_state=42).split(embeddings))
         _, val_loader = prepare_data(embeddings, labels, train_idx, val_idx, batch_size=batch_size)
 
-        # Load the model from the best checkpoint and evaluate
-        best_model = MLPTrainer.load_from_checkpoint(args.checkpoint_path, input_dim=input_dim, hidden_dim=hidden_dim, output_dim=output_dim, dropout_rate=dropout_rate)
+        # Load the model from the best checkpoint and move it to the device
+        best_model = MLPTrainer.load_from_checkpoint(args.checkpoint_path, input_dim=input_dim, hidden_dim=hidden_dim, output_dim=output_dim, dropout_rate=dropout_rate).to(device)
         
         # Evaluate the model on the test data
-        evaluate_model(best_model, val_loader)
+        evaluate_model(best_model, val_loader, device)
 
-def evaluate_model(model, data_loader):
+def evaluate_model(model, data_loader, device):
     model.eval()
     correct = 0
     total = 0
@@ -103,6 +106,8 @@ def evaluate_model(model, data_loader):
     with torch.no_grad():
         for batch in data_loader:
             inputs, labels = batch
+            inputs, labels = inputs.to(device), labels.to(device)  # Move data to the correct device
+
             outputs = model(inputs)
             _, predicted = torch.max(outputs, 1)
             total += labels.size(0)
