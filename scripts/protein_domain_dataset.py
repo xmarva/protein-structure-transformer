@@ -1,12 +1,3 @@
-import os
-import torch
-import esm
-import torch_geometric.nn as gnn
-from biopandas.pdb import PandasPdb
-from torch_geometric.data import Data, Dataset
-from pst.utils import AA_THREE_TO_ONE
-from pst.utils import ARCHITECTURE_NAMES
-
 class ProteinDomainDataset(Dataset):
     def __init__(
         self,
@@ -26,9 +17,7 @@ class ProteinDomainDataset(Dataset):
 
     @property
     def raw_file_names(self):
-        raw_files = os.listdir(self.root)
-        if "processed" in raw_files:
-            raw_files.remove("processed")
+        raw_files = os.listdir(os.path.join(self.root, "pdb"))
         return raw_files
 
     @property
@@ -44,7 +33,7 @@ class ProteinDomainDataset(Dataset):
         edge_index = gnn.radius_graph(
             structure, r=self.eps, loop=False, num_workers=self.num_workers
         )
-        edge_index += 1 # shift for cls_idx
+        edge_index += 1  # shift for cls_idx
 
         x = torch.cat(
             [
@@ -81,8 +70,9 @@ class ProteinDomainDataset(Dataset):
         idx = 0
         for raw_path in self.raw_paths:
             pdb_id = os.path.basename(raw_path).replace('.pdb', '')
+            pdb_path = os.path.join(self.root, "pdb", pdb_id + ".pdb")
 
-            data = self.get_graph_from_pdb(raw_path)
+            data = self.get_graph_from_pdb(pdb_path)
  
             cath_labels = self.cath_data[self.cath_data['cath_id'] == pdb_id].iloc[0]
             class_label = cath_labels['class']
