@@ -26,7 +26,7 @@ class ProteinDomainDataset(Dataset):
 
     @property
     def raw_file_names(self):
-        raw_files = os.listdir(self.root + "/pdb/")
+        raw_files = os.listdir(self.root)
         if "processed" in raw_files:
             raw_files.remove("processed")
         return raw_files
