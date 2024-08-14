@@ -76,9 +76,12 @@ class ProteinDomainDataset(Dataset):
         return Data(x=x, edge_index=edge_index, idx_mask=idx_mask)
 
     def process(self):
-        if os.path.exists(self.processed_dir) and any(
-            os.path.isfile(os.path.join(self.processed_dir, f)) for f in os.listdir(self.processed_dir)
-        ):
+        processed_files_exist = all(
+            os.path.isfile(os.path.join(self.processed_dir, f"data_{i}.pt"))
+            for i in range(len(self.raw_file_names))
+        )
+
+        if processed_files_exist:
             print("Processed files already exist. Skipping the graph generation.")
             return
 
