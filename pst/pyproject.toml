@@ -1,0 +1,28 @@
+[build-system]
+requires = ["setuptools", "setuptools-scm"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "pst"
+authors = [
+    {name = "Dexiong Chen", email = "dchen@biochem.mpg.de"},
+    {name = "Philip Hartout", email = "hartout@biochem.mpg.de"},
+]
+description = "Protein Structure Transformer"
+readme = "README.md"
+requires-python = ">=3.9"
+keywords = ["protein", "structure", "transformer"]
+license = {text = "BSD-3-Clause"}
+classifiers = [
+    "Programming Language :: Python :: 3",
+]
+dynamic = ["version"]
+
+[tool.setuptools]
+packages = ["pst"]
+
+
+[tool.pytest.ini_options]
+pythonpath = [
+  "."
+]
