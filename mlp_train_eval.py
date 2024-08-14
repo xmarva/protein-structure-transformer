@@ -72,6 +72,9 @@ def main(args):
             # Load the best model checkpoint and validate
             best_model_path = checkpoint_callback.best_model_path
             best_model = MLPTrainer.load_from_checkpoint(best_model_path, input_dim=input_dim, hidden_dim=hidden_dim, output_dim=output_dim, dropout_rate=dropout_rate).to(device)
+
+            checkpoint_path = '/kaggle/working/best-checkpoint.ckpt'
+            trainer.save_checkpoint(checkpoint_path)
             
             # Evaluate on validation set
             val_loss = trainer.validate(best_model, val_loader)[0]['val_loss']
