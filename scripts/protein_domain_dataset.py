@@ -1,3 +1,12 @@
+import os
+import torch
+import esm
+import torch_geometric.nn as gnn
+from biopandas.pdb import PandasPdb
+from torch_geometric.data import Data, Dataset
+from pst.utils import AA_THREE_TO_ONE
+from pst.utils import ARCHITECTURE_NAMES
+
 class ProteinDomainDataset(Dataset):
     def __init__(
         self,
