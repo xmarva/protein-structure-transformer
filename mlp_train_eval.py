@@ -12,7 +12,7 @@ from dataloaders.mlp_dataloader import prepare_data
 
 def main(args):
     # Initialize parameters
-    input_dim = 320
+    input_dim = 1280
     hidden_dim = 256
     output_dim = 10
     dropout_rate = 0.3
