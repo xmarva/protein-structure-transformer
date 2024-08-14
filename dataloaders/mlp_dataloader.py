@@ -15,7 +15,7 @@ class ProteinDataset(Dataset):
         label = self.labels[idx]
         return embedding, label
 
-def prepare_data(embeddings, labels, train_idx=None, val_idx=None, batch_size=32):
+def prepare_data(embeddings, labels, train_idx=None, val_idx=None, test_idx=None, batch_size=32):
     dataset = ProteinDataset(embeddings, labels)
     
     if train_idx is not None and val_idx is not None:

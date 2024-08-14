@@ -2,7 +2,6 @@ import torch
 import numpy as np
 import argparse
 import pytorch_lightning as pl
-from sklearn.model_selection import KFold
 from pytorch_lightning.callbacks import ModelCheckpoint, LearningRateMonitor
 from pytorch_lightning.loggers import CSVLogger
 
@@ -87,14 +86,13 @@ def main(args):
 
     elif args.mode == 'test':
         # Prepare data loaders for testing
-        train_idx, val_idx = next(KFold(n_splits=n_splits, shuffle=True, random_state=42).split(embeddings))
-        _, val_loader = prepare_data(embeddings, labels, train_idx, val_idx, batch_size=batch_size)
+        train_loader, val_loader, test_loader = prepare_data(embeddings, labels, batch_size=batch_size)
 
         # Load the model from the best checkpoint and move it to the device
         best_model = MLPTrainer.load_from_checkpoint(args.checkpoint_path, input_dim=input_dim, hidden_dim=hidden_dim, output_dim=output_dim, dropout_rate=dropout_rate).to(device)
         
         # Evaluate the model on the test data
-        evaluate_model(best_model, val_loader, device)
+        evaluate_model(best_model, test_loader, device)
 
 def evaluate_model(model, data_loader, device):
     model.eval()
