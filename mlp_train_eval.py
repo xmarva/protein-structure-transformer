@@ -18,8 +18,8 @@ def main():
     n_splits = 5 
 
     # Load data
-    embeddings = torch.load('data/embds/protein_representations.pt')  # Relative path
-    labels = torch.tensor(np.load('data/embds/labels_cath.npy')).long()  # Relative path
+    embeddings = torch.load('data/embeds/protein_representations.pt')  # Relative path
+    labels = torch.tensor(np.load('data/embeds/labels_cath.npy')).long()  # Relative path
 
     # Initialize K-Fold
     kf = KFold(n_splits=n_splits, shuffle=True, random_state=42)
