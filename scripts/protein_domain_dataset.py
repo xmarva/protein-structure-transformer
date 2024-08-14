@@ -22,7 +22,6 @@ class ProteinDomainDataset(Dataset):
         self.cath_data = cath_data
         self.esm_alphabet = esm_alphabet
         self.num_workers = num_workers
-        self.processed_dir = os.path.join(root, "graphs")
         super().__init__(root, transform, pre_transform)
 
     @property
@@ -37,6 +36,10 @@ class ProteinDomainDataset(Dataset):
     @property
     def processed_file_names(self):
         return [f"data_{i}.pt" for i in range(len(self.raw_file_names))]
+
+    @property
+    def processed_dir(self):
+        return os.path.join(self.root, "graphs")
 
     def get_graph_from_pdb(self, fname):
         pdb_contents = PandasPdb().read_pdb(fname).df["ATOM"]
