@@ -23,9 +23,9 @@ def main(args):
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(f"Using device: {device}")
 
-    # Load data
-    embeddings = torch.load(f'{args.data_path}/protein_representations.pt').to(device)  # Dynamic path, move to device
-    labels = torch.tensor(np.load(f'{args.data_path}/labels_cath.npy')).long().to(device)  # Dynamic path, move to device
+    # Load data and convert to tensors if necessary
+    embeddings = torch.tensor(torch.load(f'{args.data_path}/protein_representations.pt')).to(device)  # Convert to tensor and move to device
+    labels = torch.tensor(np.load(f'{args.data_path}/labels_cath.npy')).long().to(device)  # Convert to tensor and move to device
 
     if args.mode == 'train':
         # Initialize K-Fold
