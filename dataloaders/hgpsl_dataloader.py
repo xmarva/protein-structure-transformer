@@ -49,33 +49,6 @@ def custom_collate(batch):
     
     return batch, superfamilies_tensor
 
-def custom_collate(data_list):
-    # Separate features and edges
-    node_features = [data.x for data in data_list]
-    edge_indices = [data.edge_index for data in data_list]
-
-    # Find maximum number of nodes
-    max_num_nodes = max(data.x.size(0) for data in data_list)
-
-    # Pad node features to have consistent size
-    padded_node_features = []
-    for features in node_features:
-        num_nodes = features.size(0)
-        if num_nodes < max_num_nodes:
-            # Padding with zeros
-            padded_features = torch.cat([features, torch.zeros(max_num_nodes - num_nodes, features.size(1))], dim=0)
-        else:
-            padded_features = features
-        padded_node_features.append(padded_features)
-    
-    # Create a batch object
-    batch = Batch.from_data_list([
-        data.__class__(x=padded_node_features[i], edge_index=edge_indices[i], **data.__dict__)
-        for i, data in enumerate(data_list)
-    ])
-    
-    return batch
-
 def prepare_data(node_features, edge_indices, labels, superfamilies, train_idx=None, val_idx=None, test_idx=None, batch_size=32):
     # Create a dataset
     dataset = ProteinDataset(node_features, edge_indices, labels, superfamilies)
