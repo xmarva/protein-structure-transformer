@@ -19,6 +19,10 @@ import os
 import torch
 from torch_geometric.data import Data
 
+import os
+import torch
+from torch_geometric.data import Data
+
 def load_data_from_directory(directory):
     node_features_list = []
     edge_indices_list = []
@@ -49,24 +53,37 @@ def load_data_from_directory(directory):
                 print(f"Error loading file {file_path}: {e}")
     
     # Check if lists are not empty before concatenation
-    def safe_concatenate(tensor_list):
+    def safe_concatenate(tensor_list, dim=0):
         if tensor_list:
             # Ensure tensors have the same dimensions for concatenation
-            return torch.cat(tensor_list, dim=0)
+            return torch.cat(tensor_list, dim=dim)
         return torch.tensor([])
 
-    # Concatenate node features and edge indices
-    node_features = safe_concatenate(node_features_list)
-    edge_indices = safe_concatenate(edge_indices_list)
+    # Concatenate node features
+    node_features = safe_concatenate(node_features_list, dim=0)
     
-    # Ensure edge_indices has correct dimensions
-    if edge_indices.numel() > 0 and edge_indices.dim() == 2:
-        edge_indices = edge_indices
-    else:
-        edge_indices = torch.tensor([[], []], dtype=torch.long)
+    # Check if edge_indices_list has the same number of columns
+    def check_edge_indices_compatibility(edge_indices_list):
+        num_columns = None
+        for edge_index in edge_indices_list:
+            if num_columns is None:
+                num_columns = edge_index.size(1)
+            elif edge_index.size(1) != num_columns:
+                raise ValueError(f"Mismatch in edge_index dimensions: expected {num_columns}, got {edge_index.size(1)}")
+        return num_columns
 
-    labels = safe_concatenate(labels_list)
-    superfamilies = safe_concatenate(superfamilies_list)
+    # Verify consistency in edge index dimensions
+    try:
+        num_columns = check_edge_indices_compatibility(edge_indices_list)
+    except ValueError as e:
+        print(e)
+        return None, None, None, None
+    
+    # Concatenate edge indices
+    edge_indices = safe_concatenate(edge_indices_list, dim=1)
+    
+    labels = safe_concatenate(labels_list, dim=0)
+    superfamilies = safe_concatenate(superfamilies_list, dim=0)
 
     return node_features, edge_indices, labels, superfamilies
 
