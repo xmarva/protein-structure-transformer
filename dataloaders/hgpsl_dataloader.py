@@ -33,12 +33,11 @@ def custom_collate(batch):
     padded_node_features = []
     for data in data_list:
         num_nodes = data.x.size(0)
+        if data.x.dim() == 1:  # Convert 1D to 2D
+            data.x = data.x.unsqueeze(1)  # Convert to 2D [num_nodes, 1]
         if num_nodes < max_num_nodes:
             # Padding with zeros
             pad_size = max_num_nodes - num_nodes
-            # Ensure x is 2D
-            if data.x.dim() == 1:
-                data.x = data.x.unsqueeze(1)  # Convert to 2D if needed
             padded_features = torch.cat([data.x, torch.zeros(pad_size, data.x.size(1))], dim=0)
         else:
             padded_features = data.x
