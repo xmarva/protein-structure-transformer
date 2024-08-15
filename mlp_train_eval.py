@@ -118,7 +118,13 @@ def evaluate_model(model, data_loader, device):
 
     with torch.no_grad():
         for batch in data_loader:
-            inputs, labels = batch
+            if len(batch) == 2:  # Expected case: batch contains inputs and labels
+                inputs, labels = batch
+            elif len(batch) == 3:  # Case where batch contains inputs, labels, and additional data
+                inputs, labels, _ = batch
+            else:
+                raise ValueError("Unexpected batch format")
+
             inputs, labels = inputs.to(device), labels.to(device)  # Move data to the correct device
 
             outputs = model(inputs)
@@ -134,6 +140,7 @@ def evaluate_model(model, data_loader, device):
 
     # Optionally, return predictions and labels for further analysis
     return all_preds, all_labels
+
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='Train or test an MLP model for protein classification.')
