@@ -97,6 +97,10 @@ class ProteinDomainDataset(Dataset):
             cath_labels = self.cath_data[self.cath_data['cath_id'] == pdb_id].iloc[0]
             class_label = cath_labels['class']
             architecture_label = cath_labels['architecture']
+            superfamily_label = cath_labels['superfamily']
+
+            data.superfamily = torch.tensor(superfamily_label, dtype=torch.long)
+
             cath_label_key = (class_label, architecture_label)
 
             if cath_label_key in ARCHITECTURE_NAMES:

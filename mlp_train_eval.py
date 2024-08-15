@@ -25,6 +25,7 @@ def main(args):
     # Load data and convert to tensors if necessary
     embeddings = torch.tensor(torch.load(f'{args.data_path}/protein_representations.pt')).to(device)  # Convert to tensor and move to device
     labels = torch.tensor(np.load(f'{args.data_path}/labels_cath.npy')).long().to(device)  # Convert to tensor and move to device
+    superfamilies = torch.tensor(np.load(f'{args.data_path}/superfamilies.npy')).long().to(device)
 
     if args.mode == 'train':
         # Initialize K-Fold
@@ -34,17 +35,22 @@ def main(args):
         validation_scores = []
 
         # Cross-validation loop
-        for fold, (train_idx, val_idx) in enumerate(kf.split(embeddings)):
+        for fold, (train_idx, val_idx) in enumerate(kf.split(np.unique(superfamilies))):
             print(f"Fold {fold+1}/{n_splits}")
 
+            # Create custom split for train and validation
+            train_sf = np.unique(superfamilies)[train_idx]
+            val_sf = np.unique(superfamilies)[val_idx]
+
+            train_idx = [i for i, sf in enumerate(superfamilies) if sf in train_sf]
+            val_idx = [i for i, sf in enumerate(superfamilies) if sf in val_sf]
+
             # Prepare data loaders for this fold
-            train_loader, val_loader = prepare_data(embeddings, labels, train_idx, val_idx, batch_size=batch_size)
+            train_loader, val_loader, test_loader = prepare_data(embeddings, labels, superfamilies, train_idx, val_idx, batch_size=batch_size)
 
             # Initialize model and move it to the device
             model = MLPTrainer(input_dim, hidden_dim, output_dim, dropout_rate).to(device)
 
-            # Initialize CSVLogger
-            csv_logger = CSVLogger("logs", name=f"my_mlp_model_fold_{fold+1}")
 
             # Set up checkpointing to save the best model
             checkpoint_callback = ModelCheckpoint(
@@ -89,7 +95,7 @@ def main(args):
 
     elif args.mode == 'test':
         # Prepare data loaders for testing
-        train_loader, val_loader, test_loader = prepare_data(embeddings, labels, batch_size=batch_size)
+        train_loader, val_loader, test_loader = prepare_data(embeddings, labels, superfamilies, train_idx, val_idx, batch_size=batch_size)
 
         # Load the model from the best checkpoint and move it to the device
         best_model = MLPTrainer.load_from_checkpoint(args.checkpoint_path, input_dim=input_dim, hidden_dim=hidden_dim, output_dim=output_dim, dropout_rate=dropout_rate).to(device)

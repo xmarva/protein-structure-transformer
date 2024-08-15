@@ -1,11 +1,14 @@
 import torch
+from torch.utils.data import Dataset, DataLoader, Subset
+from sklearn.model_selection import KFold, train_test_split
 import numpy as np
-from torch.utils.data import Dataset, DataLoader, Subset, random_split
+from collections import Counter
 
 class ProteinDataset(Dataset):
-    def __init__(self, embeddings, labels):
+    def __init__(self, embeddings, labels, superfamilies):
         self.embeddings = embeddings
         self.labels = labels
+        self.superfamilies = superfamilies
 
     def __len__(self):
         return len(self.labels)
@@ -13,28 +16,53 @@ class ProteinDataset(Dataset):
     def __getitem__(self, idx):
         embedding = self.embeddings[idx]
         label = self.labels[idx]
-        return embedding, label
+        superfamily = self.superfamilies[idx]
+        return embedding, label, superfamily
 
-def prepare_data(embeddings, labels, train_idx=None, val_idx=None, test_idx=None, batch_size=32):
-    dataset = ProteinDataset(embeddings, labels)
+def prepare_data(embeddings, labels, superfamilies, train_idx=None, val_idx=None, test_idx=None, batch_size=32):
+    # Create a dataset
+    dataset = ProteinDataset(embeddings, labels, superfamilies)
+
+    if train_idx is None or val_idx is None or test_idx is None:
+        # Get unique superfamilies
+        unique_superfamilies = np.unique(superfamilies)
+
+        # Stratified split: split unique superfamilies into train, val, test sets
+        train_sf, temp_sf = train_test_split(unique_superfamilies, test_size=0.3, random_state=42)
+        val_sf, test_sf = train_test_split(temp_sf, test_size=0.33, random_state=42)  # 0.33 of 0.3 is ~0.1
+
+        # Get indices for each subset
+        train_idx = [i for i, sf in enumerate(superfamilies) if sf in train_sf]
+        val_idx = [i for i, sf in enumerate(superfamilies) if sf in val_sf]
+        test_idx = [i for i, sf in enumerate(superfamilies) if sf in test_sf]
+
+    # Debugging prints: Number of data entries in each subset
+    print(f"Number of entries in train set: {len(train_idx)}")
+    print(f"Number of entries in validation set: {len(val_idx)}")
+    if test_idx:
+        print(f"Number of entries in test set: {len(test_idx)}\n")
     
-    if train_idx is not None and val_idx is not None:
-        train_dataset = Subset(dataset, train_idx)
-        val_dataset = Subset(dataset, val_idx)
-        train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
-        val_loader = DataLoader(val_dataset, batch_size=batch_size)
-        return train_loader, val_loader
+    # Debugging prints: Superfamilies and their counts in each subset
+    def print_superfamily_info(indices, split_name):
+        sf_counts = Counter(superfamilies[idx] for idx in indices)
+        print(f"{split_name} set superfamilies and their counts:")
+        for sf, count in sf_counts.items():
+            print(f"Superfamily: {sf}, Number of protein domains: {count}")
+        print()
+
+    print_superfamily_info(train_idx, "Train")
+    print_superfamily_info(val_idx, "Validation")
+    if test_idx:
+        print_superfamily_info(test_idx, "Test")
     
-    # Split dataset for training, validation, and test
-    total_len = len(dataset)
-    test_len = int(total_len * 0.1)
-    val_len = int(total_len * 0.2)
-    train_len = total_len - val_len - test_len
-
-    train_dataset, val_dataset, test_dataset = random_split(dataset, [train_len, val_len, test_len])
-
+    # Create subsets
+    train_dataset = Subset(dataset, train_idx)
+    val_dataset = Subset(dataset, val_idx)
+    test_dataset = Subset(dataset, test_idx) if test_idx else None
+    
+    # Create dataloaders
     train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
     val_loader = DataLoader(val_dataset, batch_size=batch_size)
-    test_loader = DataLoader(test_dataset, batch_size=batch_size)
+    test_loader = DataLoader(test_dataset, batch_size=batch_size) if test_dataset else None
 
     return train_loader, val_loader, test_loader

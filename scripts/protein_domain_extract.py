@@ -64,6 +64,7 @@ def compute_repr(data_loader, model, cfg):
     '''
     embeddings = []
     labels_cath = []
+    superfamilies = []
     
     for batch_idx, data in enumerate(tqdm(data_loader, desc="Processing batches")):
         data = data.to(cfg.device)
@@ -82,9 +83,11 @@ def compute_repr(data_loader, model, cfg):
         
         embeddings.extend(graph_embeddings.cpu())
         labels_cath.extend(data.cath_label.cpu().numpy())
+        superfamilies.extend(data.superfamilies.cpu().numpy())
     
     embeddings = torch.stack(embeddings).cpu().numpy()
     labels_cath = np.array(labels_cath)
+    superfamilies = np.array(superfamilies)
 
     # Prints for debugging
     example_embedding = embeddings[0]
@@ -94,7 +97,7 @@ def compute_repr(data_loader, model, cfg):
 
     print(f"Total size of embeddings array in memory: {embeddings.nbytes / 1e6} MB")
 
-    return embeddings, labels_cath
+    return embeddings, labels_cath, superfamilies
 
 
 def main():
@@ -129,7 +132,7 @@ def main():
         shuffle=False,
     )
 
-    protein_repr_all, labels_cath = compute_repr(data_loader, model, cfg)
+    protein_repr_all, labels_cath, superfamilies = compute_repr(data_loader, model, cfg)
 
     # Save embeddings and labels
     save_path = Path("./data/embeds")
@@ -137,9 +140,11 @@ def main():
 
     embeddings_file = save_path / "protein_representations.pt"
     labels_file = save_path / "labels_cath.npy"
+    superfam_file = save_path / "superfamilies.npy"
 
     torch.save(protein_repr_all, embeddings_file)
     np.save(labels_file, labels_cath)
+    np.save(superfam_file, superfamilies)
 
     print(f"Embeddings saved to {embeddings_file}")
     print(f"Labels saved to {labels_file}")
