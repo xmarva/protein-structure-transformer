@@ -55,21 +55,6 @@ def prepare_data(node_features, edge_indices, labels, superfamilies, train_idx=N
     print(f"Number of entries in validation set: {len(val_idx)}")
     print(f"Number of entries in test set: {len(test_idx)}\n")
     
-    # Debugging prints: Superfamilies and their counts in each subset
-    def print_superfamily_info(indices, split_name):
-        indices_sf = np.array(superfamilies)[indices]  # Use NumPy array for indexing
-        indices_sf_list = indices_sf.tolist()  # Convert to list for counting
-        print(f"Indices superfamilies list for {split_name}: {indices_sf_list}")  # Debugging print
-        sf_counts = Counter(indices_sf_list)  # Count occurrences of each superfamily
-        print(f"{split_name} set superfamilies and their counts:")
-        for sf, count in sf_counts.items():
-            print(f"Superfamily: {sf}, Number of protein domains: {count}")
-        print()
-
-    print_superfamily_info(train_idx, "Train")
-    print_superfamily_info(val_idx, "Validation")
-    print_superfamily_info(test_idx, "Test")
-    
     # Create subsets
     train_dataset = Subset(dataset, train_idx)
     val_dataset = Subset(dataset, val_idx)
