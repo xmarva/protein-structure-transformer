@@ -28,13 +28,21 @@ def custom_collate(batch):
     # Find maximum number of nodes
     max_num_nodes = max(data.x.size(0) for data in data_list)
     
+    # Print shapes for debugging
+    for i, data in enumerate(data_list):
+        print(f"Graph {i}: x.shape={data.x.shape}")
+
     # Pad node features to have consistent size
     padded_node_features = []
     for data in data_list:
         num_nodes = data.x.size(0)
         if num_nodes < max_num_nodes:
             # Padding with zeros
-            padded_features = torch.cat([data.x, torch.zeros(max_num_nodes - num_nodes, data.x.size(1))], dim=0)
+            pad_size = max_num_nodes - num_nodes
+            # Ensure x is 2D
+            if data.x.dim() == 1:
+                data.x = data.x.unsqueeze(1)  # Convert to 2D if needed
+            padded_features = torch.cat([data.x, torch.zeros(pad_size, data.x.size(1))], dim=0)
         else:
             padded_features = data.x
         # Recreate Data object with padded features
