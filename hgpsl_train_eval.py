@@ -6,13 +6,14 @@ import pytorch_lightning as pl
 from pytorch_lightning.callbacks import ModelCheckpoint, LearningRateMonitor
 from pytorch_lightning.loggers import CSVLogger
 from sklearn.model_selection import KFold
-from torch_geometric.data import DataLoader
+from torch_geometric.data import Data, DataLoader
 
 from models.hgp.hgpsl_model import Model  # Adjust this import based on your directory structure
 from dataloaders.hgpsl_dataloader import prepare_data  # Adjust this import based on your directory structure
 
 def load_data_from_directory(directory):
-    embeddings_list = []
+    node_features_list = []
+    edge_indices_list = []
     labels_list = []
     superfamilies_list = []
     
@@ -21,17 +22,23 @@ def load_data_from_directory(directory):
             file_path = os.path.join(directory, filename)
             data = torch.load(file_path)
             
-            # Assuming the .pt files contain 'embeddings', 'labels', and 'superfamilies'
-            embeddings_list.append(data['embeddings'])
-            labels_list.append(data['cath_label'])
-            superfamilies_list.append(data['superfamilies'])
+            # Ensure data is of type Data
+            if not isinstance(data, Data):
+                raise TypeError(f"Expected 'Data' type but got {type(data)}")
+
+            # Extract node features, edge indices, and labels
+            node_features_list.append(data.x)
+            edge_indices_list.append(data.edge_index)
+            labels_list.append(data.cath_label)
+            superfamilies_list.append(data.superfamilies)
     
-    # Concatenate all the data
-    embeddings = torch.cat(embeddings_list, dim=0)
+    # Concatenate node features and edge indices
+    node_features = torch.cat(node_features_list, dim=0)
+    edge_indices = torch.cat(edge_indices_list, dim=1)
     labels = torch.cat(labels_list, dim=0)
     superfamilies = torch.cat(superfamilies_list, dim=0)
-    
-    return embeddings, labels, superfamilies
+
+    return node_features, edge_indices, labels, superfamilies
 
 def main(args):
     # Initialize parameters
@@ -50,7 +57,7 @@ def main(args):
     data_directory = '/kaggle/working/medium-bio/data/graphs'
 
     # Load data and convert to tensors if necessary
-    embeddings, labels, superfamilies = load_data_from_directory(data_directory)
+    node_features, edge_indices, labels, superfamilies = load_data_from_directory(data_directory)
 
     if args.mode == 'train':
         # Initialize K-Fold
@@ -77,7 +84,7 @@ def main(args):
             val_idx = [i for i, sf in enumerate(superfamilies_np) if sf in val_sf]
 
             # Prepare data loaders for this fold
-            train_loader, val_loader, test_loader = prepare_data(embeddings, labels, superfamilies, train_idx, val_idx, batch_size=batch_size)
+            train_loader, val_loader, test_loader = prepare_data(node_features, edge_indices, labels, superfamilies, train_idx, val_idx, batch_size=batch_size)
 
             # Initialize model and move it to the device
             model = Model(args).to(device)
@@ -131,7 +138,7 @@ def main(args):
         test_idx = list(range(len(superfamilies_np)))  # You may need to adjust this according to your setup
 
         # Prepare data loaders for testing
-        train_loader, val_loader, test_loader = prepare_data(embeddings, labels, superfamilies, train_idx, val_idx, batch_size=batch_size)
+        train_loader, val_loader, test_loader = prepare_data(node_features, edge_indices, labels, superfamilies, train_idx, val_idx, batch_size=batch_size)
 
         # Load the model from the best checkpoint and move it to the device
         best_model = Model.load_from_checkpoint(args.checkpoint_path, **vars(args)).to(device)

@@ -4,41 +4,10 @@ from sklearn.model_selection import train_test_split
 import numpy as np
 from collections import Counter
 
-import os
-import torch
-import numpy as np
-
-def load_data_from_directory(directory):
-    embeddings_list = []
-    labels_list = []
-    superfamilies_list = []
-    
-    for filename in os.listdir(directory):
-        if filename.endswith('.pt'):
-            file_path = os.path.join(directory, filename)
-            data = torch.load(file_path)
-            
-            # Assuming the .pt files contain 'embeddings', 'labels', and 'superfamilies'
-            embeddings_list.append(data['embeddings'])
-            labels_list.append(data['cath_label'])
-            superfamilies_list.append(data['superfamilies'])
-    
-    # Concatenate all the data
-    embeddings = torch.cat(embeddings_list, dim=0)
-    labels = torch.cat(labels_list, dim=0)
-    superfamilies = torch.cat(superfamilies_list, dim=0)
-    
-    return embeddings, labels, superfamilies
-
-import torch
-from torch.utils.data import Dataset, DataLoader, Subset
-from sklearn.model_selection import train_test_split
-import numpy as np
-from collections import Counter
-
 class ProteinDataset(Dataset):
-    def __init__(self, embeddings, labels, superfamilies):
-        self.embeddings = embeddings
+    def __init__(self, node_features, edge_indices, labels, superfamilies):
+        self.node_features = node_features
+        self.edge_indices = edge_indices
         self.labels = labels
         self.superfamilies = superfamilies
 
@@ -46,14 +15,16 @@ class ProteinDataset(Dataset):
         return len(self.labels)
 
     def __getitem__(self, idx):
-        embedding = self.embeddings[idx]
+        node_feature = self.node_features[idx]
+        edge_index = self.edge_indices[idx]
         label = self.labels[idx]
         superfamily = self.superfamilies[idx]
-        return embedding, label, superfamily
+        return node_feature, edge_index, label, superfamily
 
-def prepare_data(embeddings, labels, superfamilies, train_idx=None, val_idx=None, test_idx=None, batch_size=32):
-    # Ensure embeddings, labels, and superfamilies are tensors
-    embeddings = torch.tensor(embeddings) if not torch.is_tensor(embeddings) else embeddings
+def prepare_data(node_features, edge_indices, labels, superfamilies, train_idx=None, val_idx=None, test_idx=None, batch_size=32):
+    # Ensure node_features, edge_indices, labels, and superfamilies are tensors
+    node_features = torch.tensor(node_features) if not torch.is_tensor(node_features) else node_features
+    edge_indices = torch.tensor(edge_indices) if not torch.is_tensor(edge_indices) else edge_indices
     labels = torch.tensor(labels) if not torch.is_tensor(labels) else labels
     superfamilies = torch.tensor(superfamilies) if not torch.is_tensor(superfamilies) else superfamilies
 
@@ -61,7 +32,7 @@ def prepare_data(embeddings, labels, superfamilies, train_idx=None, val_idx=None
     superfamilies_cpu = superfamilies.cpu().numpy()
 
     # Create a dataset
-    dataset = ProteinDataset(embeddings, labels, superfamilies_cpu)
+    dataset = ProteinDataset(node_features, edge_indices, labels, superfamilies_cpu)
 
     if train_idx is None or val_idx is None or test_idx is None:
         # Get unique superfamilies
