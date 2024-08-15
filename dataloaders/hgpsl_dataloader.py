@@ -1,6 +1,10 @@
 import torch
-from torch.utils.data import Dataset
+from torch.utils.data import Dataset, DataLoader
 from torch_geometric.data import Data
+from torch_geometric.data import Batch
+from sklearn.model_selection import train_test_split
+from collections import Counter
+import numpy as np
 
 class ProteinDataset(Dataset):
     def __init__(self, node_features, edge_indices, labels, superfamilies):
@@ -18,17 +22,19 @@ class ProteinDataset(Dataset):
     def __getitem__(self, idx):
         return self.data_list[idx], self.superfamilies[idx]
 
-from torch.utils.data import DataLoader, Subset
-from sklearn.model_selection import train_test_split
-from collections import Counter
-import numpy as np
+def custom_collate(batch):
+    # Extract data and superfamilies
+    data_list, superfamilies = zip(*batch)
+
+    # Use PyG Batch to handle variable-sized graphs
+    batch = Batch.from_data_list(data_list)
+    
+    # Convert superfamilies to tensor
+    superfamilies_tensor = torch.tensor(superfamilies, dtype=torch.long)
+    
+    return batch, superfamilies_tensor
 
 def prepare_data(node_features, edge_indices, labels, superfamilies, train_idx=None, val_idx=None, test_idx=None, batch_size=32):
-    node_features = torch.tensor(node_features, dtype=torch.float32) if not torch.is_tensor(node_features) else node_features
-    edge_indices = torch.tensor(edge_indices, dtype=torch.long) if not torch.is_tensor(edge_indices) else edge_indices
-    labels = torch.tensor(labels, dtype=torch.long) if not torch.is_tensor(labels) else labels
-    superfamilies = torch.tensor(superfamilies, dtype=torch.long) if not torch.is_tensor(superfamilies) else superfamilies
-
     # Create a dataset
     dataset = ProteinDataset(node_features, edge_indices, labels, superfamilies)
 
@@ -52,9 +58,8 @@ def prepare_data(node_features, edge_indices, labels, superfamilies, train_idx=N
     
     # Debugging prints: Superfamilies and their counts in each subset
     def print_superfamily_info(indices, split_name):
-        indices = np.array(indices)  # Convert indices to NumPy array
-        indices_sf = superfamilies[indices]  # Use NumPy array for indexing
-        sf_counts = Counter(indices_sf.numpy())  # Convert tensor to NumPy array for counting
+        indices_sf = np.array(superfamilies)[indices]  # Use NumPy array for indexing
+        sf_counts = Counter(indices_sf)  # Count occurrences of each superfamily
         print(f"{split_name} set superfamilies and their counts:")
         for sf, count in sf_counts.items():
             print(f"Superfamily: {sf}, Number of protein domains: {count}")
@@ -69,10 +74,10 @@ def prepare_data(node_features, edge_indices, labels, superfamilies, train_idx=N
     val_dataset = Subset(dataset, val_idx)
     test_dataset = Subset(dataset, test_idx) if test_idx else None
     
-    # Create dataloaders
-    train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
-    val_loader = DataLoader(val_dataset, batch_size=batch_size)
-    test_loader = DataLoader(test_dataset, batch_size=batch_size) if test_dataset else None
+    # Create dataloaders with custom collate function
+    train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True, collate_fn=custom_collate)
+    val_loader = DataLoader(val_dataset, batch_size=batch_size, collate_fn=custom_collate)
+    test_loader = DataLoader(test_dataset, batch_size=batch_size, collate_fn=custom_collate) if test_dataset else None
 
     # Inspect a batch from each DataLoader
     for batch in train_loader:
@@ -89,4 +94,3 @@ def prepare_data(node_features, edge_indices, labels, superfamilies, train_idx=N
             break
 
     return train_loader, val_loader, test_loader
-
