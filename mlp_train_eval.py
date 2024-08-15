@@ -9,6 +9,8 @@ from sklearn.model_selection import KFold
 from models.mlp_model import MLPTrainer
 from dataloaders.mlp_dataloader import prepare_data
 
+# working v.1
+
 def main(args):
     # Initialize parameters
     input_dim = 1280
