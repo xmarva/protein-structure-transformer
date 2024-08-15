@@ -23,12 +23,16 @@ import os
 import torch
 from torch_geometric.data import Data
 
+import os
+import torch
+from torch_geometric.data import Data
+
 def load_data_from_directory(directory):
     node_features_list = []
     edge_indices_list = []
     labels_list = []
     superfamilies_list = []
-    
+
     for filename in os.listdir(directory):
         if filename.endswith('.pt'):
             file_path = os.path.join(directory, filename)
@@ -36,33 +40,31 @@ def load_data_from_directory(directory):
             
             try:
                 data = torch.load(file_path)
-                
+
                 # Debug print to inspect the type of data
                 print(f"Type of data loaded: {type(data)}")
                 
                 if not isinstance(data, Data):
                     raise TypeError(f"Expected 'Data' type but got {type(data)}")
 
-                # Extract node features, edge indices, and labels
-                node_features_list.append(data.x)
-                edge_indices_list.append(data.edge_index)
-                labels_list.append(data.cath_label)
-                superfamilies_list.append(data.superfamilies)
+                # Append data components if they exist
+                if data.x is not None:
+                    node_features_list.append(data.x)
+                if data.edge_index is not None:
+                    edge_indices_list.append(data.edge_index)
+                if hasattr(data, 'cath_label') and data.cath_label is not None:
+                    labels_list.append(data.cath_label)
+                if hasattr(data, 'superfamilies') and data.superfamilies is not None:
+                    superfamilies_list.append(data.superfamilies)
             
             except Exception as e:
                 print(f"Error loading file {file_path}: {e}")
     
-    # Check if lists are not empty before concatenation
     def safe_concatenate(tensor_list, dim=0):
         if tensor_list:
-            # Ensure tensors have the same dimensions for concatenation
             return torch.cat(tensor_list, dim=dim)
         return torch.tensor([])
 
-    # Concatenate node features
-    node_features = safe_concatenate(node_features_list, dim=0)
-    
-    # Check if edge_indices_list has the same number of columns
     def check_edge_indices_compatibility(edge_indices_list):
         num_columns = None
         for edge_index in edge_indices_list:
@@ -72,20 +74,30 @@ def load_data_from_directory(directory):
                 raise ValueError(f"Mismatch in edge_index dimensions: expected {num_columns}, got {edge_index.size(1)}")
         return num_columns
 
-    # Verify consistency in edge index dimensions
     try:
         num_columns = check_edge_indices_compatibility(edge_indices_list)
     except ValueError as e:
         print(e)
         return None, None, None, None
-    
-    # Concatenate edge indices
+
     edge_indices = safe_concatenate(edge_indices_list, dim=1)
-    
+    node_features = safe_concatenate(node_features_list, dim=0)
     labels = safe_concatenate(labels_list, dim=0)
     superfamilies = safe_concatenate(superfamilies_list, dim=0)
 
-    return node_features, edge_indices, labels, superfamilies
+    # Ensure superfamilies is not None before converting to numpy
+    if superfamilies is None:
+        print("Error: superfamilies is None.")
+        return None, None, None, None
+
+    try:
+        superfamilies_np = superfamilies.cpu().numpy()
+    except AttributeError as e:
+        print(f"Error converting superfamilies to numpy: {e}")
+        return None, None, None, None
+
+    return node_features, edge_indices, labels, superfamilies_np
+
 
 def main(args):
     # Initialize parameters
