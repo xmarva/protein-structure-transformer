@@ -15,6 +15,10 @@ import os
 import torch
 from torch_geometric.data import Data
 
+import os
+import torch
+from torch_geometric.data import Data
+
 def load_data_from_directory(directory):
     node_features_list = []
     edge_indices_list = []
@@ -44,26 +48,25 @@ def load_data_from_directory(directory):
             except Exception as e:
                 print(f"Error loading file {file_path}: {e}")
     
-    # Concatenate node features and edge indices
-    if node_features_list:
-        node_features = torch.cat(node_features_list, dim=0)
-    else:
-        node_features = torch.tensor([])
+    # Check if lists are not empty before concatenation
+    def safe_concatenate(tensor_list):
+        if tensor_list:
+            # Ensure tensors have the same dimensions for concatenation
+            return torch.cat(tensor_list, dim=0)
+        return torch.tensor([])
 
-    if edge_indices_list:
-        edge_indices = torch.cat(edge_indices_list, dim=1)
+    # Concatenate node features and edge indices
+    node_features = safe_concatenate(node_features_list)
+    edge_indices = safe_concatenate(edge_indices_list)
+    
+    # Ensure edge_indices has correct dimensions
+    if edge_indices.numel() > 0 and edge_indices.dim() == 2:
+        edge_indices = edge_indices
     else:
         edge_indices = torch.tensor([[], []], dtype=torch.long)
 
-    if labels_list:
-        labels = torch.cat(labels_list, dim=0)
-    else:
-        labels = torch.tensor([])
-
-    if superfamilies_list:
-        superfamilies = torch.cat(superfamilies_list, dim=0)
-    else:
-        superfamilies = torch.tensor([])
+    labels = safe_concatenate(labels_list)
+    superfamilies = safe_concatenate(superfamilies_list)
 
     return node_features, edge_indices, labels, superfamilies
 
