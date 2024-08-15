@@ -4,6 +4,38 @@ from sklearn.model_selection import train_test_split
 import numpy as np
 from collections import Counter
 
+import os
+import torch
+import numpy as np
+
+def load_data_from_directory(directory):
+    embeddings_list = []
+    labels_list = []
+    superfamilies_list = []
+    
+    for filename in os.listdir(directory):
+        if filename.endswith('.pt'):
+            file_path = os.path.join(directory, filename)
+            data = torch.load(file_path)
+            
+            # Assuming the .pt files contain 'embeddings', 'labels', and 'superfamilies'
+            embeddings_list.append(data['embeddings'])
+            labels_list.append(data['cath_label'])
+            superfamilies_list.append(data['superfamilies'])
+    
+    # Concatenate all the data
+    embeddings = torch.cat(embeddings_list, dim=0)
+    labels = torch.cat(labels_list, dim=0)
+    superfamilies = torch.cat(superfamilies_list, dim=0)
+    
+    return embeddings, labels, superfamilies
+
+import torch
+from torch.utils.data import Dataset, DataLoader, Subset
+from sklearn.model_selection import train_test_split
+import numpy as np
+from collections import Counter
+
 class ProteinDataset(Dataset):
     def __init__(self, embeddings, labels, superfamilies):
         self.embeddings = embeddings
@@ -20,8 +52,13 @@ class ProteinDataset(Dataset):
         return embedding, label, superfamily
 
 def prepare_data(embeddings, labels, superfamilies, train_idx=None, val_idx=None, test_idx=None, batch_size=32):
+    # Ensure embeddings, labels, and superfamilies are tensors
+    embeddings = torch.tensor(embeddings) if not torch.is_tensor(embeddings) else embeddings
+    labels = torch.tensor(labels) if not torch.is_tensor(labels) else labels
+    superfamilies = torch.tensor(superfamilies) if not torch.is_tensor(superfamilies) else superfamilies
+
     # Ensure superfamilies is on CPU and converted to numpy array
-    superfamilies_cpu = superfamilies.cpu().numpy() if torch.is_tensor(superfamilies) else superfamilies
+    superfamilies_cpu = superfamilies.cpu().numpy()
 
     # Create a dataset
     dataset = ProteinDataset(embeddings, labels, superfamilies_cpu)
@@ -46,7 +83,6 @@ def prepare_data(embeddings, labels, superfamilies, train_idx=None, val_idx=None
     
     # Debugging prints: Superfamilies and their counts in each subset
     def print_superfamily_info(indices, split_name):
-        # Convert indices to superfamilies and count occurrences
         indices_sf = superfamilies_cpu[indices]
         sf_counts = Counter(indices_sf)
         print(f"{split_name} set superfamilies and their counts:")
@@ -68,6 +104,7 @@ def prepare_data(embeddings, labels, superfamilies, train_idx=None, val_idx=None
     val_loader = DataLoader(val_dataset, batch_size=batch_size)
     test_loader = DataLoader(test_dataset, batch_size=batch_size) if test_dataset else None
 
+    # Inspect a batch from each DataLoader
     for batch in train_loader:
         print("Training batch:", batch)
         break
@@ -76,6 +113,9 @@ def prepare_data(embeddings, labels, superfamilies, train_idx=None, val_idx=None
         print("Validation batch:", batch)
         break
 
-
+    if test_loader:
+        for batch in test_loader:
+            print("Test batch:", batch)
+            break
 
     return train_loader, val_loader, test_loader

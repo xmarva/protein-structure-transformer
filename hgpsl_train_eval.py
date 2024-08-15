@@ -24,10 +24,10 @@ def main(args):
     device = torch.device(args.device if torch.cuda.is_available() else 'cpu')
     print(f"Using device: {device}")
 
+    data_directory = '/kaggle/working/medium-bio/data/graphs'
+
     # Load data and convert to tensors if necessary
-    embeddings = torch.tensor(torch.load(f'{args.data_path}/protein_representations.pt')).to(device)
-    labels = torch.tensor(np.load(f'{args.data_path}/labels_cath.npy')).long().to(device)
-    superfamilies = torch.tensor(np.load(f'{args.data_path}/superfamilies.npy')).long().to(device)
+    embeddings, labels, superfamilies = load_data_from_directory(data_directory)
 
     if args.mode == 'train':
         # Initialize K-Fold
