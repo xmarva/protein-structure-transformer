@@ -3,7 +3,7 @@ import pytorch_lightning as pl
 from torch import nn
 import torch.nn.functional as F
 from torch_geometric.nn import global_mean_pool as gap, global_max_pool as gmp
-from layers import GCN, HGPSLPool
+from hgp.layers import GCN, HGPSLPool
 from torch_geometric.nn import GCNConv
 
 class HierarchicalGNN(pl.LightningModule):

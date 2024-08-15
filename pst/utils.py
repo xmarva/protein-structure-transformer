@@ -13,16 +13,18 @@ from torch_geometric.data import Data
 from torch_scatter import scatter
 from tqdm import tqdm
 
-ARCHITECTURE_NAMES = {(1, 10): "Mainly Alpha: Orthogonal Bundle",
-                      (1, 20): "Mainly Alpha: Up-down Bundle",
-                      (2, 30): "Mainly Beta: Roll",
-                      (2, 40): "Mainly Beta: Beta Barrel",
-                      (2, 60): "Mainly Beta: Sandwich",
-                      (3, 10): "Alpha Beta: Roll",
-                      (3, 20): "Alpha Beta: Alpha-Beta Barrel",
-                      (3, 30): "Alpha Beta: 2-Layer Sandwich",
-                      (3, 40): "Alpha Beta: 3-Layer(aba) Sandwich",
-                      (3, 90): "Alpha Beta: Alpha-Beta Complex"}
+ARCHITECTURE_NAMES = {
+    (1, 10): "Mainly Alpha: Orthogonal Bundle",
+    (1, 20): "Mainly Alpha: Up-down Bundle",
+    (2, 30): "Mainly Beta: Roll",
+    (2, 40): "Mainly Beta: Beta Barrel",
+    (2, 60): "Mainly Beta: Sandwich",
+    (3, 10): "Alpha Beta: Roll",
+    (3, 20): "Alpha Beta: Alpha-Beta Barrel",
+    (3, 30): "Alpha Beta: 2-Layer Sandwich",
+    (3, 40): "Alpha Beta: 3-Layer(aba) Sandwich",
+    (3, 90): "Alpha Beta: Alpha-Beta Complex"
+    }
 
 AA_THREE_TO_ONE = {
     'ALA': 'A',  # Alanine
