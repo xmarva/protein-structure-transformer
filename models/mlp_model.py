@@ -21,21 +21,21 @@ class MLPTrainer(pl.LightningModule):
         return self.model(x)
 
     def training_step(self, batch, batch_idx):
-        x, y = batch
+        x, y, _ = batch  # Unpack all three elements
         logits = self.forward(x)
         loss = self.criterion(logits, y)
         self.log('train_loss', loss, prog_bar=True)
         return loss
 
     def validation_step(self, batch, batch_idx):
-        x, y = batch
+        x, y, _ = batch  # Unpack all three elements
         logits = self.forward(x)
         loss = self.criterion(logits, y)
         self.log('val_loss', loss, prog_bar=True)
         return loss
 
     def test_step(self, batch, batch_idx):
-        x, y = batch
+        x, y, _ = batch  # Unpack all three elements
         logits = self.forward(x)
         loss = self.criterion(logits, y)
         self.log('test_loss', loss)
