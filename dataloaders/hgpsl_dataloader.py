@@ -24,7 +24,7 @@ def prepare_data(embeddings, labels, superfamilies, train_idx=None, val_idx=None
     superfamilies_cpu = superfamilies.cpu().numpy() if torch.is_tensor(superfamilies) else superfamilies
 
     # Create a dataset
-    dataset = ProteinDataset(embeddings, labels, superfamilies)
+    dataset = ProteinDataset(embeddings, labels, superfamilies_cpu)
 
     if train_idx is None or val_idx is None or test_idx is None:
         # Get unique superfamilies
@@ -46,7 +46,7 @@ def prepare_data(embeddings, labels, superfamilies, train_idx=None, val_idx=None
     
     # Debugging prints: Superfamilies and their counts in each subset
     def print_superfamily_info(indices, split_name):
-        # Move to CPU and convert to numpy array
+        # Convert indices to superfamilies and count occurrences
         indices_sf = superfamilies_cpu[indices]
         sf_counts = Counter(indices_sf)
         print(f"{split_name} set superfamilies and their counts:")
