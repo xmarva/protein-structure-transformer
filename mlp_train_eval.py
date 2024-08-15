@@ -110,6 +110,7 @@ def main(args):
         evaluate_model(best_model, test_loader, device)
 
 def evaluate_model(model, data_loader, device):
+    model.to(device)  # Ensure the model is on the correct device
     model.eval()
     correct = 0
     total = 0
