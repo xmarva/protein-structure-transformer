@@ -165,6 +165,7 @@ if __name__ == "__main__":
     parser.add_argument('--dropout_ratio', type=float, required=True, help="Dropout ratio")
     parser.add_argument('--batch_size', type=int, required=True, help="Batch size")
     parser.add_argument('--epochs', type=int, required=True, help="Number of epochs")
+    parser.add_argument('--learning_rate', type=float, default=0.001)
     parser.add_argument('--device', type=str, default='cuda:0', help='Device to use for training/testing')
     args = parser.parse_args()
 
