@@ -21,60 +21,36 @@ class ProteinDataset(Dataset):
     def __getitem__(self, idx):
         return self.data_list[idx], self.superfamilies[idx]
 
+def pad_features(features, size):
+    padded_features = torch.zeros(size, features.size(1))
+    padded_features[:features.size(0)] = features
+    return padded_features
+
+def pad_edge_index(edge_index, num_nodes):
+    edge_index = edge_index.clone()
+    edge_index = torch.cat([edge_index, torch.zeros((2, num_nodes - edge_index.max().item() - 1), dtype=torch.long)], dim=1)
+    return edge_index
+
 def custom_collate(batch):
-    # Extract data and superfamilies
-    data_list, superfamilies = zip(*batch)
-
-    # Determine maximum number of nodes and features
-    max_num_nodes = max(data.x.size(0) for data in data_list)
-    num_features = max(data.x.size(1) if data.x.dim() == 2 else 1 for data in data_list)
-
-    # Initialize lists to hold padded data
-    padded_node_features = []
-    padded_edge_indices = []
-
-    for data in data_list:
-        num_nodes = data.x.size(0)
-
-        # Convert 1D node features to 2D
-        if data.x.dim() == 1:
-            data.x = data.x.unsqueeze(1)  # Convert to 2D [num_nodes, 1]
-
-        # Print debug information
-        print(f"Original x.shape={data.x.shape}")
-        
-        # Pad node features
-        if num_nodes < max_num_nodes:
-            pad_size = max_num_nodes - num_nodes
-            padded_features = torch.cat([data.x, torch.zeros(pad_size, data.x.size(1))], dim=0)
-        else:
-            padded_features = data.x
-
-        # Adjust edge indices for padding
-        edge_index = data.edge_index
-        if edge_index.size(1) > 0:
-            edge_index = edge_index.clone()
-            edge_index[0] = edge_index[0].clamp(max=max_num_nodes - 1)
-            edge_index[1] = edge_index[1].clamp(max=max_num_nodes - 1)
-        
-        # Print debug information
-        print(f"Edge index shape before adjustment={data.edge_index.shape}")
-        print(f"Edge index shape after adjustment={edge_index.shape}")
-
-        # Recreate Data object with padded features and adjusted edge indices
-        padded_data = data.__class__(x=padded_features, edge_index=edge_index, **data.__dict__)
-        padded_node_features.append(padded_data)
-        
-        # Debug the shape of each graph in the batch
-        print(f"Padded features shape={padded_data.x.shape}")
-
-    # Create a batch object with padded data
-    batch = Batch.from_data_list(padded_node_features)
+    node_features = [item.x for item in batch]
+    edge_indices = [item.edge_index for item in batch]
+    labels = [item.y for item in batch]
     
-    # Convert superfamilies to tensor
-    superfamilies_tensor = torch.tensor(superfamilies, dtype=torch.long)
+    # Determine max sizes for padding
+    max_nodes = max([x.size(0) for x in node_features])
+    max_edges = max([edge_index.size(1) for edge_index in edge_indices])
     
-    return batch, superfamilies_tensor
+    # Pad features and edge indices
+    padded_node_features = [pad_features(x, max_nodes) for x in node_features]
+    padded_edge_indices = [pad_edge_index(edge_index, max_nodes) for edge_index in edge_indices]
+
+    # Create batched data
+    batch = Batch.from_data_list([Data(x=x, edge_index=e, y=y) for x, e, y in zip(padded_node_features, padded_edge_indices, labels)])
+    return batch
+
+def check_tensor_sizes(tensors):
+    sizes = [t.size() for t in tensors]
+    print(f"Sizes of tensors: {sizes}")
 
 
 def prepare_data(node_features, edge_indices, labels, superfamilies, train_idx=None, val_idx=None, test_idx=None, batch_size=32):
