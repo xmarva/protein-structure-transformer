@@ -1,3 +1,4 @@
+import pytorch_lightning as pl
 import torch
 import torch.nn.functional as F
 from torch_geometric.nn import global_mean_pool as gap, global_max_pool as gmp
@@ -5,8 +6,7 @@ from torch_geometric.nn import GCNConv
 
 from models.hgp.layers import GCN, HGPSLPool
 
-
-class Model(torch.nn.Module):
+class Model(pl.LightningModule):
     def __init__(self, args):
         super(Model, self).__init__()
         self.args = args
@@ -55,3 +55,20 @@ class Model(torch.nn.Module):
         x = F.log_softmax(self.lin3(x), dim=-1)
 
         return x
+
+    def training_step(self, batch, batch_idx):
+        x, y = batch.x, batch.y
+        y_hat = self(x)
+        loss = F.nll_loss(y_hat, y)
+        return loss
+
+    def validation_step(self, batch, batch_idx):
+        x, y = batch.x, batch.y
+        y_hat = self(x)
+        loss = F.nll_loss(y_hat, y)
+        return loss
+
+    def configure_optimizers(self):
+        optimizer = torch.optim.Adam(self.parameters(), lr=self.args.learning_rate)
+        scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=10, gamma=0.1)
+        return [optimizer], [scheduler]
