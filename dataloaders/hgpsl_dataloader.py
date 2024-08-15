@@ -77,7 +77,6 @@ def custom_collate(batch):
     return batch, superfamilies_tensor
 
 
-
 def prepare_data(node_features, edge_indices, labels, superfamilies, train_idx=None, val_idx=None, test_idx=None, batch_size=32):
     # Create a dataset
     dataset = ProteinDataset(node_features, edge_indices, labels, superfamilies)
