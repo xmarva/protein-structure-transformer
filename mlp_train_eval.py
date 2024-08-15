@@ -32,6 +32,9 @@ def main(args):
         # Initialize K-Fold
         kf = KFold(n_splits=n_splits, shuffle=True, random_state=42)
 
+        # Move superfamilies tensor to CPU and convert to NumPy array
+        superfamilies_np = superfamilies.cpu().numpy()
+
         # Initialize logger
         csv_logger = CSVLogger(save_dir=f'logs/', name=f'mlp_training_fold')  # Ensure csv_logger is initialized
 
@@ -39,15 +42,15 @@ def main(args):
         validation_scores = []
 
         # Cross-validation loop
-        for fold, (train_idx, val_idx) in enumerate(kf.split(np.unique(superfamilies))):
+        for fold, (train_idx, val_idx) in enumerate(kf.split(np.unique(superfamilies_np))):
             print(f"Fold {fold+1}/{n_splits}")
 
             # Create custom split for train and validation
-            train_sf = np.unique(superfamilies)[train_idx]
-            val_sf = np.unique(superfamilies)[val_idx]
+            train_sf = np.unique(superfamilies_np)[train_idx]
+            val_sf = np.unique(superfamilies_np)[val_idx]
 
-            train_idx = [i for i, sf in enumerate(superfamilies) if sf in train_sf]
-            val_idx = [i for i, sf in enumerate(superfamilies) if sf in val_sf]
+            train_idx = [i for i, sf in enumerate(superfamilies_np) if sf in train_sf]
+            val_idx = [i for i, sf in enumerate(superfamilies_np) if sf in val_sf]
 
             # Prepare data loaders for this fold
             train_loader, val_loader, test_loader = prepare_data(embeddings, labels, superfamilies, train_idx, val_idx, batch_size=batch_size)
