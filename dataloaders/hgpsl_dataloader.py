@@ -25,12 +25,9 @@ def custom_collate(batch):
     # Extract data and superfamilies
     data_list, superfamilies = zip(*batch)
 
-    # Find maximum number of nodes
+    # Find maximum number of nodes and features
     max_num_nodes = max(data.x.size(0) for data in data_list)
-    
-    # Print shapes for debugging
-    for i, data in enumerate(data_list):
-        print(f"Graph {i}: x.shape={data.x.shape}")
+    num_features = max(data.x.size(1) if data.x.dim() == 2 else 1 for data in data_list)
 
     # Pad node features to have consistent size
     padded_node_features = []
@@ -56,6 +53,7 @@ def custom_collate(batch):
     superfamilies_tensor = torch.tensor(superfamilies, dtype=torch.long)
     
     return batch, superfamilies_tensor
+
 
 def prepare_data(node_features, edge_indices, labels, superfamilies, train_idx=None, val_idx=None, test_idx=None, batch_size=32):
     # Create a dataset
