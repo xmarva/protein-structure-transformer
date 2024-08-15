@@ -47,8 +47,9 @@ def prepare_data(node_features, edge_indices, labels, superfamilies, train_idx=N
     
     # Debugging prints: Superfamilies and their counts in each subset
     def print_superfamily_info(indices, split_name):
-        indices_sf = superfamilies[indices]
-        sf_counts = Counter(indices_sf.numpy())
+        indices = np.array(indices)  # Convert indices to NumPy array
+        indices_sf = superfamilies[indices]  # Use NumPy array for indexing
+        sf_counts = Counter(indices_sf.numpy())  # Convert tensor to NumPy array for counting
         print(f"{split_name} set superfamilies and their counts:")
         for sf, count in sf_counts.items():
             print(f"Superfamily: {sf}, Number of protein domains: {count}")
