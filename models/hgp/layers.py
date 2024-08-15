@@ -1,7 +1,7 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from sparse_softmax import Sparsemax
+from models.hgp.sparse_softmax import Sparsemax
 from torch.nn import Parameter
 from torch_geometric.data import Data
 from torch_geometric.nn.conv import MessagePassing
