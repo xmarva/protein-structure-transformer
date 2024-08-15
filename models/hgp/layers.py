@@ -5,11 +5,22 @@ from models.hgp.sparse_softmax import Sparsemax
 from torch.nn import Parameter
 from torch_geometric.data import Data
 from torch_geometric.nn.conv import MessagePassing
-from torch_geometric.nn.pool.topk_pool import topk, filter_adj
 from torch_geometric.utils import softmax, dense_to_sparse, add_remaining_self_loops
 from torch_scatter import scatter_add
 from torch_sparse import spspmm, coalesce
 
+def topk(x, ratio, batch):
+    k = max(1, int(ratio * x.size(0)))
+    _, idx = x.topk(k, largest=True)
+    idx = idx.sort()[0]
+    return idx
+
+def filter_adj(edge_index, edge_attr, idx, num_nodes=None):
+    mask = (torch.arange(edge_index.size(1), device=edge_index.device).unsqueeze(0) == idx.unsqueeze(1)).any(0)
+    edge_index = edge_index[:, mask]
+    if edge_attr is not None:
+        edge_attr = edge_attr[mask]
+    return edge_index, edge_attr
 
 class TwoHopNeighborhood(object):
     def __call__(self, data):
