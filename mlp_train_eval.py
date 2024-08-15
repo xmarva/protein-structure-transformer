@@ -4,7 +4,7 @@ import argparse
 import pytorch_lightning as pl
 from pytorch_lightning.callbacks import ModelCheckpoint, LearningRateMonitor
 from pytorch_lightning.loggers import CSVLogger
-from sklearn.model_selection import KFold  # Ensure to import KFold
+from sklearn.model_selection import KFold
 
 from models.mlp_model import MLPTrainer
 from dataloaders.mlp_dataloader import prepare_data
@@ -24,8 +24,8 @@ def main(args):
     print(f"Using device: {device}")
 
     # Load data and convert to tensors if necessary
-    embeddings = torch.tensor(torch.load(f'{args.data_path}/protein_representations.pt')).to(device)  # Convert to tensor and move to device
-    labels = torch.tensor(np.load(f'{args.data_path}/labels_cath.npy')).long().to(device)  # Convert to tensor and move to device
+    embeddings = torch.tensor(torch.load(f'{args.data_path}/protein_representations.pt')).to(device)
+    labels = torch.tensor(np.load(f'{args.data_path}/labels_cath.npy')).long().to(device)
     superfamilies = torch.tensor(np.load(f'{args.data_path}/superfamilies.npy')).long().to(device)
 
     if args.mode == 'train':
@@ -36,7 +36,7 @@ def main(args):
         superfamilies_np = superfamilies.cpu().numpy()
 
         # Initialize logger
-        csv_logger = CSVLogger(save_dir=f'logs/', name=f'mlp_training_fold')  # Ensure csv_logger is initialized
+        csv_logger = CSVLogger(save_dir=f'logs/', name=f'mlp_training_fold')
 
         # Track validation scores
         validation_scores = []
@@ -75,7 +75,7 @@ def main(args):
                 max_epochs=max_epochs,
                 callbacks=[checkpoint_callback, lr_monitor],
                 logger=csv_logger,
-                enable_progress_bar=True  # Make sure your version supports this argument
+                enable_progress_bar=True
             )
 
             # Train the model
@@ -87,7 +87,7 @@ def main(args):
 
             checkpoint_path = '/kaggle/working/best-checkpoint.ckpt'
             trainer.save_checkpoint(checkpoint_path)
-            
+
             # Evaluate on validation set
             val_loss = trainer.validate(best_model, val_loader)[0]['val_loss']
             validation_scores.append(val_loss)
@@ -100,12 +100,18 @@ def main(args):
         print(f"Average Validation Loss across {n_splits} folds: {avg_val_loss:.4f}")
 
     elif args.mode == 'test':
+        # Ensure indices are properly initialized
+        superfamilies_np = superfamilies.cpu().numpy()
+        train_idx = list(range(len(superfamilies_np)))  # You may need to adjust this according to your setup
+        val_idx = []  # Provide appropriate indices if you have validation data separate from training
+        test_idx = list(range(len(superfamilies_np)))  # You may need to adjust this according to your setup
+
         # Prepare data loaders for testing
         train_loader, val_loader, test_loader = prepare_data(embeddings, labels, superfamilies, train_idx, val_idx, batch_size=batch_size)
 
         # Load the model from the best checkpoint and move it to the device
         best_model = MLPTrainer.load_from_checkpoint(args.checkpoint_path, input_dim=input_dim, hidden_dim=hidden_dim, output_dim=output_dim, dropout_rate=dropout_rate).to(device)
-        
+
         # Evaluate the model on the test data
         evaluate_model(best_model, test_loader, device)
 
@@ -141,7 +147,6 @@ def evaluate_model(model, data_loader, device):
 
     # Optionally, return predictions and labels for further analysis
     return all_preds, all_labels
-
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='Train or test an MLP model for protein classification.')
