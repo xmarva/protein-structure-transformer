@@ -10,6 +10,28 @@ from torch_geometric.data import DataLoader
 from models.hgp.hgpsl_model import Model  # Adjust this import based on your directory structure
 from dataloaders.hgpsl_dataloader import prepare_data  # Adjust this import based on your directory structure
 
+def load_data_from_directory(directory):
+    embeddings_list = []
+    labels_list = []
+    superfamilies_list = []
+    
+    for filename in os.listdir(directory):
+        if filename.endswith('.pt'):
+            file_path = os.path.join(directory, filename)
+            data = torch.load(file_path)
+            
+            # Assuming the .pt files contain 'embeddings', 'labels', and 'superfamilies'
+            embeddings_list.append(data['embeddings'])
+            labels_list.append(data['cath_label'])
+            superfamilies_list.append(data['superfamilies'])
+    
+    # Concatenate all the data
+    embeddings = torch.cat(embeddings_list, dim=0)
+    labels = torch.cat(labels_list, dim=0)
+    superfamilies = torch.cat(superfamilies_list, dim=0)
+    
+    return embeddings, labels, superfamilies
+
 def main(args):
     # Initialize parameters
     input_dim = args.num_features
