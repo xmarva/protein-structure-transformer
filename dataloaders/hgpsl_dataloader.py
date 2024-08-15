@@ -1,7 +1,6 @@
 import torch
-from torch.utils.data import Dataset, DataLoader
-from torch_geometric.data import Data
-from torch_geometric.data import Batch
+from torch.utils.data import Dataset, DataLoader, Subset
+from torch_geometric.data import Data, Batch
 from sklearn.model_selection import train_test_split
 from collections import Counter
 import numpy as np
@@ -59,7 +58,7 @@ def prepare_data(node_features, edge_indices, labels, superfamilies, train_idx=N
     # Debugging prints: Superfamilies and their counts in each subset
     def print_superfamily_info(indices, split_name):
         indices_sf = np.array(superfamilies)[indices]  # Use NumPy array for indexing
-        sf_counts = Counter(indices_sf)  # Count occurrences of each superfamily
+        sf_counts = Counter(indices_sf.tolist())  # Convert to list for counting
         print(f"{split_name} set superfamilies and their counts:")
         for sf, count in sf_counts.items():
             print(f"Superfamily: {sf}, Number of protein domains: {count}")
