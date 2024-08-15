@@ -3,7 +3,7 @@ import torch.nn.functional as F
 from torch_geometric.nn import global_mean_pool as gap, global_max_pool as gmp
 from torch_geometric.nn import GCNConv
 
-from models.hgnn_model.layers import GCN, HGPSLPool
+from models.hgp.layers import GCN, HGPSLPool
 
 
 class Model(torch.nn.Module):
