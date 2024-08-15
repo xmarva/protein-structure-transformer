@@ -11,6 +11,10 @@ from torch_geometric.data import Data, DataLoader
 from models.hgp.hgpsl_model import Model  # Adjust this import based on your directory structure
 from dataloaders.hgpsl_dataloader import prepare_data  # Adjust this import based on your directory structure
 
+import os
+import torch
+from torch_geometric.data import Data
+
 def load_data_from_directory(directory):
     node_features_list = []
     edge_indices_list = []
@@ -20,23 +24,46 @@ def load_data_from_directory(directory):
     for filename in os.listdir(directory):
         if filename.endswith('.pt'):
             file_path = os.path.join(directory, filename)
-            data = torch.load(file_path)
+            print(f"Loading file: {file_path}")  # Debug print to check file paths
             
-            # Ensure data is of type Data
-            if not isinstance(data, Data):
-                raise TypeError(f"Expected 'Data' type but got {type(data)}")
+            try:
+                data = torch.load(file_path)
+                
+                # Debug print to inspect the type of data
+                print(f"Type of data loaded: {type(data)}")
+                
+                if not isinstance(data, Data):
+                    raise TypeError(f"Expected 'Data' type but got {type(data)}")
 
-            # Extract node features, edge indices, and labels
-            node_features_list.append(data.x)
-            edge_indices_list.append(data.edge_index)
-            labels_list.append(data.cath_label)
-            superfamilies_list.append(data.superfamilies)
+                # Extract node features, edge indices, and labels
+                node_features_list.append(data.x)
+                edge_indices_list.append(data.edge_index)
+                labels_list.append(data.cath_label)
+                superfamilies_list.append(data.superfamilies)
+            
+            except Exception as e:
+                print(f"Error loading file {file_path}: {e}")
     
     # Concatenate node features and edge indices
-    node_features = torch.cat(node_features_list, dim=0)
-    edge_indices = torch.cat(edge_indices_list, dim=1)
-    labels = torch.cat(labels_list, dim=0)
-    superfamilies = torch.cat(superfamilies_list, dim=0)
+    if node_features_list:
+        node_features = torch.cat(node_features_list, dim=0)
+    else:
+        node_features = torch.tensor([])
+
+    if edge_indices_list:
+        edge_indices = torch.cat(edge_indices_list, dim=1)
+    else:
+        edge_indices = torch.tensor([[], []], dtype=torch.long)
+
+    if labels_list:
+        labels = torch.cat(labels_list, dim=0)
+    else:
+        labels = torch.tensor([])
+
+    if superfamilies_list:
+        superfamilies = torch.cat(superfamilies_list, dim=0)
+    else:
+        superfamilies = torch.tensor([])
 
     return node_features, edge_indices, labels, superfamilies
 
