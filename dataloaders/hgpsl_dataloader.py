@@ -40,6 +40,9 @@ def custom_collate(batch):
         if data.x.dim() == 1:
             data.x = data.x.unsqueeze(1)  # Convert to 2D [num_nodes, 1]
 
+        # Print debug information
+        print(f"Original x.shape={data.x.shape}")
+        
         # Pad node features
         if num_nodes < max_num_nodes:
             pad_size = max_num_nodes - num_nodes
@@ -53,10 +56,17 @@ def custom_collate(batch):
             edge_index = edge_index.clone()
             edge_index[0] = edge_index[0].clamp(max=max_num_nodes - 1)
             edge_index[1] = edge_index[1].clamp(max=max_num_nodes - 1)
+        
+        # Print debug information
+        print(f"Edge index shape before adjustment={data.edge_index.shape}")
+        print(f"Edge index shape after adjustment={edge_index.shape}")
 
         # Recreate Data object with padded features and adjusted edge indices
         padded_data = data.__class__(x=padded_features, edge_index=edge_index, **data.__dict__)
         padded_node_features.append(padded_data)
+        
+        # Debug the shape of each graph in the batch
+        print(f"Padded features shape={padded_data.x.shape}")
 
     # Create a batch object with padded data
     batch = Batch.from_data_list(padded_node_features)
