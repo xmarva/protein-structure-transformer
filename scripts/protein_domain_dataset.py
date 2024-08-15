@@ -100,7 +100,6 @@ class ProteinDomainDataset(Dataset):
             superfamily_label = cath_labels['superfamily']
 
             data.superfamilies = torch.tensor(superfamily_label, dtype=torch.long)
-            data.superfamily = torch.tensor(superfamily_label, dtype=torch.long)
 
 
             cath_label_key = (class_label, architecture_label)

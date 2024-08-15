@@ -1,6 +1,6 @@
 import torch
 from torch.utils.data import Dataset, DataLoader, Subset
-from sklearn.model_selection import KFold, train_test_split
+from sklearn.model_selection import train_test_split
 import numpy as np
 from collections import Counter
 
@@ -20,21 +20,24 @@ class ProteinDataset(Dataset):
         return embedding, label, superfamily
 
 def prepare_data(embeddings, labels, superfamilies, train_idx=None, val_idx=None, test_idx=None, batch_size=32):
+    # Ensure superfamilies is on CPU and converted to numpy array
+    superfamilies_cpu = superfamilies.cpu().numpy() if superfamilies.is_cuda else superfamilies.numpy()
+
     # Create a dataset
     dataset = ProteinDataset(embeddings, labels, superfamilies)
 
     if train_idx is None or val_idx is None or test_idx is None:
         # Get unique superfamilies
-        unique_superfamilies = np.unique(superfamilies)
+        unique_superfamilies = np.unique(superfamilies_cpu)
 
         # Stratified split: split unique superfamilies into train, val, test sets
         train_sf, temp_sf = train_test_split(unique_superfamilies, test_size=0.3, random_state=42)
         val_sf, test_sf = train_test_split(temp_sf, test_size=0.33, random_state=42)  # 0.33 of 0.3 is ~0.1
 
         # Get indices for each subset
-        train_idx = [i for i, sf in enumerate(superfamilies) if sf in train_sf]
-        val_idx = [i for i, sf in enumerate(superfamilies) if sf in val_sf]
-        test_idx = [i for i, sf in enumerate(superfamilies) if sf in test_sf]
+        train_idx = [i for i, sf in enumerate(superfamilies_cpu) if sf in train_sf]
+        val_idx = [i for i, sf in enumerate(superfamilies_cpu) if sf in val_sf]
+        test_idx = [i for i, sf in enumerate(superfamilies_cpu) if sf in test_sf]
 
     # Debugging prints: Number of data entries in each subset
     print(f"Number of entries in train set: {len(train_idx)}")
@@ -44,7 +47,9 @@ def prepare_data(embeddings, labels, superfamilies, train_idx=None, val_idx=None
     
     # Debugging prints: Superfamilies and their counts in each subset
     def print_superfamily_info(indices, split_name):
-        sf_counts = Counter(superfamilies[idx] for idx in indices)
+        # Move to CPU and convert to numpy array
+        indices_sf = superfamilies_cpu[indices]
+        sf_counts = Counter(indices_sf)
         print(f"{split_name} set superfamilies and their counts:")
         for sf, count in sf_counts.items():
             print(f"Superfamily: {sf}, Number of protein domains: {count}")
