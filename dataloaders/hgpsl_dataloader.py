@@ -68,4 +68,14 @@ def prepare_data(embeddings, labels, superfamilies, train_idx=None, val_idx=None
     val_loader = DataLoader(val_dataset, batch_size=batch_size)
     test_loader = DataLoader(test_dataset, batch_size=batch_size) if test_dataset else None
 
+    for batch in train_loader:
+        print("Training batch:", batch)
+        break
+
+    for batch in val_loader:
+        print("Validation batch:", batch)
+        break
+
+
+
     return train_loader, val_loader, test_loader

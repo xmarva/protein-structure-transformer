@@ -57,16 +57,19 @@ class Model(pl.LightningModule):
         return x
 
     def training_step(self, batch, batch_idx):
-        x, y = batch.x, batch.y
-        y_hat = self(x)
-        loss = F.nll_loss(y_hat, y)
+        embeddings, labels, _ = batch
+        print("Training batch shapes - embeddings:", embeddings.shape, "labels:", labels.shape)
+        y_hat = self(embeddings)
+        loss = F.nll_loss(y_hat, labels)
         return loss
 
     def validation_step(self, batch, batch_idx):
-        x, y = batch.x, batch.y
-        y_hat = self(x)
-        loss = F.nll_loss(y_hat, y)
+        embeddings, labels, _ = batch
+        print("Validation batch shapes - embeddings:", embeddings.shape, "labels:", labels.shape)
+        y_hat = self(embeddings)
+        loss = F.nll_loss(y_hat, labels)
         return loss
+
 
     def configure_optimizers(self):
         optimizer = torch.optim.Adam(self.parameters(), lr=self.args.learning_rate)
