@@ -24,6 +24,11 @@ from collections import Counter
 import numpy as np
 
 def prepare_data(node_features, edge_indices, labels, superfamilies, train_idx=None, val_idx=None, test_idx=None, batch_size=32):
+    node_features = torch.tensor(node_features, dtype=torch.float32) if not torch.is_tensor(node_features) else node_features
+    edge_indices = torch.tensor(edge_indices, dtype=torch.long) if not torch.is_tensor(edge_indices) else edge_indices
+    labels = torch.tensor(labels, dtype=torch.long) if not torch.is_tensor(labels) else labels
+    superfamilies = torch.tensor(superfamilies, dtype=torch.long) if not torch.is_tensor(superfamilies) else superfamilies
+
     # Create a dataset
     dataset = ProteinDataset(node_features, edge_indices, labels, superfamilies)
 
