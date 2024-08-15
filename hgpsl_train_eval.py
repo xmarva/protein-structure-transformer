@@ -159,6 +159,8 @@ if __name__ == "__main__":
     parser.add_argument('--num_classes', type=int, required=True, help="Number of output classes")
     parser.add_argument('--pooling_ratio', type=float, default=0.5, help="Pooling ratio for the pooling layer")
     parser.add_argument('--sample_neighbor', type=bool, default=False, help="Whether to sample neighbors during training")
+    parser.add_argument('--structure_learning', type=bool, default=False, help="Whether to use structure learning")
+    parser.add_argument('--lamb', type=float, default=1.0, help="Lambda for regularization or structure learning")
     parser.add_argument('--dropout_ratio', type=float, required=True, help="Dropout ratio")
     parser.add_argument('--batch_size', type=int, required=True, help="Batch size")
     parser.add_argument('--epochs', type=int, required=True, help="Number of epochs")
