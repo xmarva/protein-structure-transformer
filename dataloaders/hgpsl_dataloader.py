@@ -25,33 +25,47 @@ def custom_collate(batch):
     # Extract data and superfamilies
     data_list, superfamilies = zip(*batch)
 
-    # Find maximum number of nodes and features
+    # Determine maximum number of nodes and features
     max_num_nodes = max(data.x.size(0) for data in data_list)
     num_features = max(data.x.size(1) if data.x.dim() == 2 else 1 for data in data_list)
 
-    # Pad node features to have consistent size
+    # Initialize lists to hold padded data
     padded_node_features = []
+    padded_edge_indices = []
+
     for data in data_list:
         num_nodes = data.x.size(0)
-        if data.x.dim() == 1:  # Convert 1D to 2D
+
+        # Convert 1D node features to 2D
+        if data.x.dim() == 1:
             data.x = data.x.unsqueeze(1)  # Convert to 2D [num_nodes, 1]
+
+        # Pad node features
         if num_nodes < max_num_nodes:
-            # Padding with zeros
             pad_size = max_num_nodes - num_nodes
             padded_features = torch.cat([data.x, torch.zeros(pad_size, data.x.size(1))], dim=0)
         else:
             padded_features = data.x
-        # Recreate Data object with padded features
-        padded_data = data.__class__(x=padded_features, edge_index=data.edge_index, **data.__dict__)
+
+        # Adjust edge indices for padding
+        edge_index = data.edge_index
+        if edge_index.size(1) > 0:
+            edge_index = edge_index.clone()
+            edge_index[0] = edge_index[0].clamp(max=max_num_nodes - 1)
+            edge_index[1] = edge_index[1].clamp(max=max_num_nodes - 1)
+
+        # Recreate Data object with padded features and adjusted edge indices
+        padded_data = data.__class__(x=padded_features, edge_index=edge_index, **data.__dict__)
         padded_node_features.append(padded_data)
 
-    # Create a batch object with padded node features
+    # Create a batch object with padded data
     batch = Batch.from_data_list(padded_node_features)
     
     # Convert superfamilies to tensor
     superfamilies_tensor = torch.tensor(superfamilies, dtype=torch.long)
     
     return batch, superfamilies_tensor
+
 
 
 def prepare_data(node_features, edge_indices, labels, superfamilies, train_idx=None, val_idx=None, test_idx=None, batch_size=32):
