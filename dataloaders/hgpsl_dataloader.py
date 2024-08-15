@@ -23,10 +23,10 @@ class ProteinDataset(Dataset):
 
 def prepare_data(node_features, edge_indices, labels, superfamilies, train_idx=None, val_idx=None, test_idx=None, batch_size=32):
     # Ensure node_features, edge_indices, labels, and superfamilies are tensors
-    node_features = torch.tensor(node_features) if not torch.is_tensor(node_features) else node_features
-    edge_indices = torch.tensor(edge_indices) if not torch.is_tensor(edge_indices) else edge_indices
-    labels = torch.tensor(labels) if not torch.is_tensor(labels) else labels
-    superfamilies = torch.tensor(superfamilies) if not torch.is_tensor(superfamilies) else superfamilies
+    node_features = torch.tensor(node_features, dtype=torch.float32) if not torch.is_tensor(node_features) else node_features
+    edge_indices = torch.tensor(edge_indices, dtype=torch.long) if not torch.is_tensor(edge_indices) else edge_indices
+    labels = torch.tensor(labels, dtype=torch.long) if not torch.is_tensor(labels) else labels
+    superfamilies = torch.tensor(superfamilies, dtype=torch.long) if not torch.is_tensor(superfamilies) else superfamilies
 
     # Ensure superfamilies is on CPU and converted to numpy array
     superfamilies_cpu = superfamilies.cpu().numpy()

@@ -6,97 +6,47 @@ import pytorch_lightning as pl
 from pytorch_lightning.callbacks import ModelCheckpoint, LearningRateMonitor
 from pytorch_lightning.loggers import CSVLogger
 from sklearn.model_selection import KFold
-from torch_geometric.data import Data, DataLoader
-
-from models.hgp.hgpsl_model import Model  # Adjust this import based on your directory structure
 from dataloaders.hgpsl_dataloader import prepare_data  # Adjust this import based on your directory structure
+from models.hgp.hgpsl_model import Model  # Adjust this import based on your directory structure
 
 import os
 import torch
+import numpy as np
 from torch_geometric.data import Data
 
-import os
-import torch
-from torch_geometric.data import Data
-
-import os
-import torch
-from torch_geometric.data import Data
-
-import os
-import torch
-from torch_geometric.data import Data
-
-def load_data_from_directory(directory):
+def load_data_from_directory(data_directory):
     node_features_list = []
     edge_indices_list = []
     labels_list = []
     superfamilies_list = []
 
-    for filename in os.listdir(directory):
-        if filename.endswith('.pt'):
-            file_path = os.path.join(directory, filename)
-            print(f"Loading file: {file_path}")  # Debug print to check file paths
+    # List all .pt files in the directory
+    for file_name in os.listdir(data_directory):
+        if file_name.endswith('.pt'):
+            file_path = os.path.join(data_directory, file_name)
             
-            try:
-                data = torch.load(file_path)
-
-                # Debug print to inspect the type of data
-                print(f"Type of data loaded: {type(data)}")
+            # Load the data
+            data = torch.load(file_path)
+            
+            # Check if the data is an instance of `torch_geometric.data.Data`
+            if isinstance(data, Data):
+                # Extract and convert data to numpy arrays
+                node_features = data.x.numpy()
+                edge_indices = data.edge_index.numpy()
+                labels = np.array([data.cath_label])  # Assuming a single label, adjust if needed
+                superfamilies = np.array([data.superfamilies])  # Assuming a single superfamily, adjust if needed
                 
-                if not isinstance(data, Data):
-                    raise TypeError(f"Expected 'Data' type but got {type(data)}")
+                # Append to the lists
+                node_features_list.append(node_features)
+                edge_indices_list.append(edge_indices)
+                labels_list.append(labels)
+                superfamilies_list.append(superfamilies)
+            else:
+                print(f"File {file_name} is not of type 'torch_geometric.data.Data'.")
 
-                # Append data components if they exist
-                if data.x is not None:
-                    node_features_list.append(data.x)
-                if data.edge_index is not None:
-                    edge_indices_list.append(data.edge_index)
-                if hasattr(data, 'cath_label') and data.cath_label is not None:
-                    labels_list.append(data.cath_label)
-                if hasattr(data, 'superfamilies') and data.superfamilies is not None:
-                    superfamilies_list.append(data.superfamilies)
-            
-            except Exception as e:
-                print(f"Error loading file {file_path}: {e}")
-    
-    def safe_concatenate(tensor_list, dim=0):
-        if tensor_list:
-            return torch.cat(tensor_list, dim=dim)
-        return torch.tensor([])
-
-    def check_edge_indices_compatibility(edge_indices_list):
-        num_columns = None
-        for edge_index in edge_indices_list:
-            if num_columns is None:
-                num_columns = edge_index.size(1)
-            elif edge_index.size(1) != num_columns:
-                raise ValueError(f"Mismatch in edge_index dimensions: expected {num_columns}, got {edge_index.size(1)}")
-        return num_columns
-
-    try:
-        num_columns = check_edge_indices_compatibility(edge_indices_list)
-    except ValueError as e:
-        print(e)
-        return None, None, None, None
-
-    edge_indices = safe_concatenate(edge_indices_list, dim=1)
-    node_features = safe_concatenate(node_features_list, dim=0)
-    labels = safe_concatenate(labels_list, dim=0)
-    superfamilies = safe_concatenate(superfamilies_list, dim=0)
-
-    # Ensure superfamilies is not None before converting to numpy
-    if superfamilies is None:
-        print("Error: superfamilies is None.")
-        return None, None, None, None
-
-    try:
-        superfamilies_np = superfamilies.cpu().numpy()
-    except AttributeError as e:
-        print(f"Error converting superfamilies to numpy: {e}")
-        return None, None, None, None
-
-    return node_features, edge_indices, labels, superfamilies_np
+    # Convert lists to numpy arrays if needed for further processing
+    # You may also want to handle concatenation or batching depending on your needs
+    return node_features_list, edge_indices_list, labels_list, superfamilies_list
 
 
 def main(args):
@@ -113,9 +63,9 @@ def main(args):
     device = torch.device(args.device if torch.cuda.is_available() else 'cpu')
     print(f"Using device: {device}")
 
-    data_directory = '/kaggle/working/medium-bio/data/graphs'
+    data_directory = args.data_path
 
-    # Load data and convert to tensors if necessary
+    # Load data
     node_features, edge_indices, labels, superfamilies = load_data_from_directory(data_directory)
 
     if args.mode == 'train':
@@ -123,7 +73,7 @@ def main(args):
         kf = KFold(n_splits=n_splits, shuffle=True, random_state=42)
 
         # Move superfamilies tensor to CPU and convert to NumPy array
-        superfamilies_np = superfamilies.cpu().numpy()
+        superfamilies_np = torch.tensor(superfamilies).cpu().numpy()
 
         # Initialize logger
         csv_logger = CSVLogger(save_dir='logs/', name='hgpsl_training_fold')
@@ -146,7 +96,7 @@ def main(args):
             train_loader, val_loader, test_loader = prepare_data(node_features, edge_indices, labels, superfamilies, train_idx, val_idx, batch_size=batch_size)
 
             # Initialize model and move it to the device
-            model = Model(args).to(device)
+            model = Model(input_dim=input_dim, hidden_dim=hidden_dim, output_dim=output_dim, dropout_rate=dropout_rate).to(device)
 
             # Set up checkpointing to save the best model
             checkpoint_callback = ModelCheckpoint(
@@ -173,7 +123,7 @@ def main(args):
 
             # Load the best model checkpoint and validate
             best_model_path = checkpoint_callback.best_model_path
-            best_model = Model.load_from_checkpoint(best_model_path, **vars(args)).to(device)
+            best_model = Model.load_from_checkpoint(best_model_path).to(device)
 
             checkpoint_path = '/kaggle/working/best-checkpoint.ckpt'
             trainer.save_checkpoint(checkpoint_path)
@@ -186,59 +136,40 @@ def main(args):
             evaluate_model(best_model, val_loader, device)
 
         # Print the cross-validation results
-        avg_val_loss = np.mean(validation_scores)
-        print(f"Average Validation Loss across {n_splits} folds: {avg_val_loss:.4f}")
+        print("Cross-validation results:")
+        print(f"Mean validation loss: {np.mean(validation_scores):.4f}")
+        print(f"Standard deviation of validation loss: {np.std(validation_scores):.4f}")
 
     elif args.mode == 'test':
-        # Ensure indices are properly initialized
-        superfamilies_np = superfamilies.cpu().numpy()
-        train_idx = list(range(len(superfamilies_np)))  # You may need to adjust this according to your setup
-        val_idx = []  # Provide appropriate indices if you have validation data separate from training
-        test_idx = list(range(len(superfamilies_np)))  # You may need to adjust this according to your setup
+        # Load best model checkpoint
+        checkpoint_path = '/kaggle/working/best-checkpoint.ckpt'
+        model = Model.load_from_checkpoint(checkpoint_path).to(device)
 
-        # Prepare data loaders for testing
-        train_loader, val_loader, test_loader = prepare_data(node_features, edge_indices, labels, superfamilies, train_idx, val_idx, batch_size=batch_size)
+        # Prepare data loaders for test
+        _, _, test_loader = prepare_data(node_features, edge_indices, labels, superfamilies, batch_size=batch_size)
 
-        # Load the model from the best checkpoint and move it to the device
-        best_model = Model.load_from_checkpoint(args.checkpoint_path, **vars(args)).to(device)
-
-        # Evaluate the model on the test data
-        evaluate_model(best_model, test_loader, device)
+        # Evaluate the model on the test set
+        evaluate_model(model, test_loader, device)
 
 def evaluate_model(model, data_loader, device):
-    model.to(device)  # Ensure the model is on the correct device
     model.eval()
     correct = 0
     total = 0
-    all_preds = []
-    all_labels = []
 
     with torch.no_grad():
-        for data in data_loader:
-            if len(data) == 2:  # Expected case: batch contains inputs and labels
-                inputs, labels = data
-            elif len(data) == 3:  # Case where batch contains inputs, labels, and additional data
-                inputs, labels, _ = data
-            else:
-                raise ValueError("Unexpected batch format")
+        for node_features, edge_index, labels, _ in data_loader:
+            node_features = node_features.to(device)
+            edge_index = edge_index.to(device)
+            labels = labels.to(device)
 
-            inputs, labels = inputs.to(device), labels.to(device)  # Move data to the correct device
-
-            outputs = model(inputs)
-            _, predicted = torch.max(outputs, 1)
+            outputs = model(node_features, edge_index)
+            _, predicted = torch.max(outputs.data, 1)
             total += labels.size(0)
             correct += (predicted == labels).sum().item()
 
-            all_preds.extend(predicted.cpu().numpy())
-            all_labels.extend(labels.cpu().numpy())
+    print(f'Accuracy: {100 * correct / total:.2f}%')
 
-    accuracy = correct / total
-    print(f'Accuracy: {accuracy * 100:.2f}%')
-
-    # Optionally, return predictions and labels for further analysis
-    return all_preds, all_labels
-
-if __name__ == "__main__":
+if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Train or test a Hierarchical Graph Pooling with Structure Learning model for protein classification.')
     parser.add_argument('mode', choices=['train', 'test'], help="Mode to run: 'train' or 'test'")
     parser.add_argument('--data_path', type=str, required=True, help="Path to the data directory")
