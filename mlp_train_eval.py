@@ -4,6 +4,7 @@ import argparse
 import pytorch_lightning as pl
 from pytorch_lightning.callbacks import ModelCheckpoint, LearningRateMonitor
 from pytorch_lightning.loggers import CSVLogger
+from sklearn.model_selection import KFold  # Ensure to import KFold
 
 from models.mlp_model import MLPTrainer
 from dataloaders.mlp_dataloader import prepare_data
@@ -31,6 +32,9 @@ def main(args):
         # Initialize K-Fold
         kf = KFold(n_splits=n_splits, shuffle=True, random_state=42)
 
+        # Initialize logger
+        csv_logger = CSVLogger(save_dir=f'logs/', name=f'mlp_training_fold')  # Ensure csv_logger is initialized
+
         # Track validation scores
         validation_scores = []
 
@@ -51,7 +55,6 @@ def main(args):
             # Initialize model and move it to the device
             model = MLPTrainer(input_dim, hidden_dim, output_dim, dropout_rate).to(device)
 
-
             # Set up checkpointing to save the best model
             checkpoint_callback = ModelCheckpoint(
                 monitor='val_loss',
@@ -69,7 +72,7 @@ def main(args):
                 max_epochs=max_epochs,
                 callbacks=[checkpoint_callback, lr_monitor],
                 logger=csv_logger,
-                enable_progress_bar=True
+                enable_progress_bar=True  # Make sure your version supports this argument
             )
 
             # Train the model
