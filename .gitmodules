@@ -1,0 +1,3 @@
+[submodule "PST"]
+	path = PST
+	url = git@github.com:BorgwardtLab/PST.git
