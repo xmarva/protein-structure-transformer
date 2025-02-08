@@ -12,10 +12,10 @@ This project develops a ML model to categorize protein structures into predefine
 
 The input data for the model consists of `protein sequences` and corresponding `3D structural information` (coordinates from `PDB` files). 
 
+![Protein Structure Transformer Architecture](imgs/pst-archiecture.png)
+
 The structural data preprocessed into a format suitable for the Protein Structure Transformer (feature vectors describing secondary structure elements). 
 `CATH` data is used as a ground truth reference for labeling and validating the architectural classification.
-
-![Protein Structure Transformer Architecture](pst-archiecture.png)
 
 ```python
 architecture_names = {(1, 10): "Mainly Alpha: Orthogonal Bundle",
