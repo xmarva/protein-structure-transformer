@@ -1,18 +1,21 @@
 # Protein Structure Classifier
 
-Custom protein structure classification, based using `PDB` (Protein Data Bank) and `CATH` (Class, Architecture, Topology, and Homologous superfamily) data. 
-The core task is predicting the `protein architecture` based on its `amino acid sequence` and `3D structure`.
+Custom protein structure classification, based on `PDB` (Protein Data Bank) and `CATH` (Class, Architecture, Topology, and Homologous superfamily) data. 
+
+The core task is predicting `protein architecture` based on its `amino acid sequence` and `3D structure`.
 
 ![Protein images](imgs/proteins.png)
 
 ## Description
 
-This project develops a ML model to categorize protein structures into predefined architectural classes. The model utilizes a Protein Structure Transformer architecture to leverage both the sequence and structural information of the protein to make accurate predictions.
+This project develops a ML model to categorize protein structures into predefined architectural classes. The model based on [Protein Structure Transformer](https://arxiv.org/pdf/2401.14819) architecture to leverage both the sequence and structural information of the protein.
 
 The input data for the model consists of `protein sequences` and corresponding `3D structural information` (coordinates from `PDB` files). 
 
 The structural data preprocessed into a format suitable for the Protein Structure Transformer (feature vectors describing secondary structure elements). 
 `CATH` data is used as a ground truth reference for labeling and validating the architectural classification.
+
+![Protein Structure Transformer Architecture](pst-archiecture.png)
 
 ```python
 architecture_names = {(1, 10): "Mainly Alpha: Orthogonal Bundle",
@@ -30,7 +33,6 @@ architecture_names = {(1, 10): "Mainly Alpha: Orthogonal Bundle",
 This dictionary indicates the hierarchical classification of protein architectures based on a combination of secondary structure elements (alpha-helices and beta-sheets) and overall fold patterns (e.g., bundles, barrels, sandwiches). 
 
 The numerical keys within the dictionary represent specific criteria for defining the architectural types (e.g., ratios of alpha-helices, arrangement of beta-sheets).
-
 
 ## How to run
 
