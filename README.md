@@ -1,6 +1,6 @@
 # Protein Structure Classifier
 
-Custom protein structure classification, based on `PDB` (Protein Data Bank) and `CATH` (Class, Architecture, Topology, and Homologous superfamily) data. 
+Custom protein structure classification, based on `PDB` and `CATH` data. 
 
 The core task is predicting `protein architecture` based on its `amino acid sequence` and `3D structure`.
 
