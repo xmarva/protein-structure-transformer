@@ -1,6 +1,6 @@
 # [Protein Structure Classifier]
 
-![Protein images](images/protein.png)
+![Protein images](imgs/proteins.png)
 
 This project aims to classify custom protein structure data, specifically using PDB (Protein Data Bank) and CATH (Class, Architecture, Topology, and Homologous superfamily) data. The core task is predicting the protein architecture based on its amino acid sequence and 3D structure.
 
@@ -24,7 +24,7 @@ architecture_names = {(1, 10): "Mainly Alpha: Orthogonal Bundle",
                       (3, 30): "Alpha Beta: 2-Layer Sandwich",
                       (3, 40): "Alpha Beta: 3-Layer(aba) Sandwich",
                       (3, 90): "Alpha Beta: Alpha-Beta Complex"}
-```json
+```
 
 This dictionary indicates the hierarchical classification of protein architectures likely based on a combination of secondary structure elements (alpha-helices and beta-sheets) and overall fold patterns (e.g., bundles, barrels, sandwiches). 
 
