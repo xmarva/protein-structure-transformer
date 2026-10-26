@@ -1,39 +1,200 @@
-# Protein Structure Classifier
+# Protein architecture classification with the Protein Structure Transformer
 
-Custom protein structure classification, based on `PDB` and `CATH` data. 
+Predicting the CATH architecture of a protein domain from its sequence and 3D structure, using
+embeddings from the Protein Structure Transformer (PST).
 
-The core task is predicting `protein architecture` based on its `amino acid sequence` and `3D structure`.
+![One domain from six of the ten architectures](imgs/proteins.png)
 
-![Protein images](imgs/proteins.png)
+*One domain from six of the ten architectures, rendered with py3Dmol in the
+[Kaggle notebook](https://www.kaggle.com/code/qmarva/wip-protein-structure-transformers).*
 
-## Description
+## The problem
 
-This project develops a ML model to categorize protein structures into predefined architectural classes. The model based on [Protein Structure Transformer](https://arxiv.org/pdf/2401.14819) architecture to leverage both the sequence and structural information of the protein.
+[CATH](https://www.cathdb.info) classifies protein domains in four levels. **Class** reflects the
+secondary structure content: mainly alpha, mainly beta, alpha-beta, or few secondary structures.
+**Architecture** describes the overall shape the helices and strands form in space, such as a
+bundle, a barrel or a sandwich, without regard to how they are connected. **Topology** (the fold)
+adds the connectivity, and the **homologous superfamily** groups domains with evidence of a common
+ancestor. A domain's classification is written as four numbers, for example 3.90.1170.50 for
+domain 2w3sB01.
 
-The input data for the model consists of `protein sequences` and corresponding `3D structural information` (coordinates from `PDB` files). 
+The task here is the second level: given a domain's sequence and coordinates, predict which of
+ten architectures from classes 1 to 3 it belongs to. The classes are balanced:
 
-![Protein Structure Transformer Architecture](imgs/pst-architecture.png)
+| Label | CATH | Class | Architecture | Domains |
+|---:|---|---|---|---:|
+| 0 | 1.10 | Mainly Alpha | Orthogonal Bundle | 627 |
+| 1 | 1.20 | Mainly Alpha | Up-down Bundle | 626 |
+| 2 | 2.30 | Mainly Beta | Roll | 640 |
+| 3 | 2.40 | Mainly Beta | Beta Barrel | 634 |
+| 4 | 2.60 | Mainly Beta | Sandwich | 630 |
+| 5 | 3.10 | Alpha Beta | Roll | 614 |
+| 6 | 3.20 | Alpha Beta | Alpha-Beta Barrel | 613 |
+| 7 | 3.30 | Alpha Beta | 2-Layer Sandwich | 627 |
+| 8 | 3.40 | Alpha Beta | 3-Layer(aba) Sandwich | 628 |
+| 9 | 3.90 | Alpha Beta | Alpha-Beta Complex | 634 |
 
-The structural data preprocessed into a format suitable for the Protein Structure Transformer (feature vectors describing secondary structure elements). 
-`CATH` data is used as a ground truth reference for labeling and validating the architectural classification.
+The label ids are defined in [scripts/cath_labels.py](scripts/cath_labels.py).
 
-```python
-architecture_names = {(1, 10): "Mainly Alpha: Orthogonal Bundle",
-                      (1, 20): "Mainly Alpha: Up-down Bundle",
-                      (2, 30): "Mainly Beta: Roll",
-                      (2, 40): "Mainly Beta: Beta Barrel",
-                      (2, 60): "Mainly Beta: Sandwich",
-                      (3, 10): "Alpha Beta: Roll",
-                      (3, 20): "Alpha Beta: Alpha-Beta Barrel",
-                      (3, 30): "Alpha Beta: 2-Layer Sandwich",
-                      (3, 40): "Alpha Beta: 3-Layer(aba) Sandwich",
-                      (3, 90): "Alpha Beta: Alpha-Beta Complex"}
-```
+## Data
 
-This dictionary indicates the hierarchical classification of protein architectures based on a combination of secondary structure elements (alpha-helices and beta-sheets) and overall fold patterns (e.g., bundles, barrels, sandwiches). 
+The data set has 6,273 domains cut from 5,356 PDB entries. They come from 833 topologies and
+3,568 homologous superfamilies. All are experimental structures with resolutions from 0.75 to
+3.49 Å (median 2.0 Å), and the domains are 13 to 1,202 residues long (median 122).
 
-The numerical keys within the dictionary represent specific criteria for defining the architectural types (e.g., ratios of alpha-helices, arrangement of beta-sheets).
+It consists of two parts:
+
+- `data/cath_data.csv`, one row per domain with the columns `cath_id`, `class`, `architecture`,
+  `topology`, `superfamily`, `resolution_in_angstroms`, `pdb_id`, `sequences` and `cath_indices`
+  (the domain's residue ranges). The `superfamily` column holds only the last of the four CATH
+  numbers, so the code joins all four columns to get a superfamily id.
+- `data/pdb/<cath_id>.pdb`, the coordinates of each domain, already cut to the domain boundaries.
+
+The files are not part of this repository. The coordinates come from the
+[Protein Data Bank](https://www.wwpdb.org), whose data are released under
+[CC0 1.0](https://www.wwpdb.org/about/usage-policies), and the labels from
+[CATH](https://www.cathdb.info), released under [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/).
+The CATH release the set was built from is not recorded. A comparable set can be assembled from
+CATH's [download site](https://www.cathdb.info/download): `cath-domain-list.txt` gives the four
+CATH numbers and the resolution of every domain, and CATH also distributes the coordinates of
+each domain as a PDB file. The scripts only need the PDB files and the `cath_id`, `class`,
+`architecture`, `topology` and `superfamily` columns.
+
+## Approach
+
+![PST architecture](imgs/pst-architecture.png)
+
+*The Protein Structure Transformer. Figure from Chen et al. (2024).*
+
+[PST](https://arxiv.org/abs/2401.14819) (Chen et al., 2024) adds structure to the protein
+language model ESM-2. A residue graph connects residues whose C-alpha atoms are within 8 Å, and a
+small graph network, the structure extractor, computes a vector for every residue from its
+neighbourhood in that graph. These vectors are added to the queries, keys and values of every
+self-attention block. The authors trained the structure extractor on 542k AlphaFold structures
+from SwissProt. In the `_so` models ("structure only") the ESM-2 weights stayed frozen during this
+training, so the same model run without the graph is plain ESM-2.
+
+I use PST as a frozen feature extractor. The PST code itself lives in the `PST` submodule, which
+points to the authors' repository at commit `57d9dcd`; nothing in it is modified. This repository
+adds the following.
+
+**Embeddings.** [scripts/cath_dataset.py](scripts/cath_dataset.py) turns every PDB file into
+PST's input: the sequence read from the C-alpha atoms as ESM tokens, and the 8 Å residue graph.
+[scripts/extract_embeddings.py](scripts/extract_embeddings.py) runs `pst_t33_so` (ESM-2 650M
+backbone, 1,280 dimensions) on each domain twice, with and without the graph, averages the two
+per-residue outputs as PST's own extraction script does, and averages over residues to get one
+vector per domain.
+
+**MLP on the embeddings.** [models/mlp_model.py](models/mlp_model.py) is a three-layer MLP with
+dropout. [scripts/train_mlp.py](scripts/train_mlp.py) evaluates it with five-fold
+cross-validation in which a superfamily never appears in two folds. Domains of one superfamily
+are related and often similar in sequence, so a random split would let the model match test
+domains to their relatives in the training set; with the grouped split the score measures how
+well it recognises an architecture in superfamilies it has not seen. Within each training fold,
+10% of the superfamilies are held out to choose the checkpoint, so the test fold is used only
+for the reported numbers.
+
+**Graph network on residues.** Architecture is about how secondary structure elements are
+packed, which suggests pooling residues step by step into larger units rather than averaging
+them all at once. [models/hgnn_model.py](models/hgnn_model.py) implements this with Hierarchical
+Graph Pooling with Structure Learning (HGP-SL, [Zhang et al., 2020](https://arxiv.org/abs/1911.05954)):
+each pooling layer keeps a fraction of the nodes (half by default), those that their neighbours
+describe least well, then learns new edges between the kept nodes with an attention score. The layers in
+[models/hgp](models/hgp) are adapted from the [authors' code](https://github.com/cszhangzhen/HGP-SL).
+The intended input is the residue graph with per-residue PST embeddings as node features. Only
+the model exists so far; there is no data pipeline or training script for it.
+
+## Status
+
+There are no results yet.
+
+Done:
+
+- The embedding pipeline. An earlier version of it ran once on Kaggle (T4 GPU) over all 6,273
+  domains and produced a 6,273 × 1,280 matrix in about half an hour, including the model download
+  and graph construction; the [Kaggle notebook](https://www.kaggle.com/code/qmarva/wip-protein-structure-transformers)
+  stopped with an error at the start of training, before any metric was computed. The scripts in
+  this repository have since been checked end to end on CPU with the small `pst_t6_so` model on six
+  domains.
+- The MLP and its grouped cross-validation, checked on synthetic embeddings.
+- The HGP-SL graph network, checked on toy graphs. On random test graphs its pooling layer gives the
+  same output as a port of the original HGP-SL implementation, in all combinations of its options.
+
+Not done:
+
+- Running `scripts/train_mlp.py` on the PST embeddings and reporting accuracy and macro F1.
+- A comparison with sequence-only ESM-2 embeddings, to see how much the structure adds.
+- A dataset of residue graphs with per-residue embeddings, and training of the graph network.
 
 ## How to run
 
-(Coming soon)
+Set up the environment (Python 3.11):
+
+```bash
+git clone https://github.com/xmarva/protein-structure-transformer.git
+cd protein-structure-transformer
+git submodule update --init        # fetches PST into PST/
+
+python3.11 -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
+# torch_scatter and torch_cluster must match your torch and CUDA build, for example on CPU:
+pip install torch_scatter==2.1.2 torch_cluster==1.6.3 -f https://data.pyg.org/whl/torch-2.5.0+cpu.html
+```
+
+The scripts import `pst` straight from the submodule, so PST does not need to be installed.
+Put the data in `data/` as described above and run from the repository root:
+
+```bash
+# one vector per domain; downloads the PST weights to .cache/pst/ on first use
+python -m scripts.extract_embeddings --datadir data --cath data/cath_data.csv --model pst_t33_so --include-seq
+
+# five-fold cross-validation grouped by superfamily; writes logs/mlp_cv/metrics.json and predictions.csv
+python -m scripts.train_mlp data/embeddings/pst_t33_so.pt
+```
+
+For the full set, `pst_t33_so` is practical only on a GPU. For a quick test on CPU, use `--model pst_t6_so` (320
+dimensions) on a few PDB files.
+
+The graph network can be used on any PyG batch of graphs; the docstring of
+[models/hgnn_model.py](models/hgnn_model.py) has a minimal example.
+
+## Repository layout
+
+```
+.
+├── PST/                        PST submodule (BorgwardtLab/PST)
+├── imgs/                       figures for this README
+├── models/
+│   ├── mlp_model.py            MLPClassifier: MLP on one embedding per domain
+│   ├── hgnn_model.py           HierarchicalGNN: GCN layers with HGP-SL pooling
+│   └── hgp/                    HGP-SL layers: pooling, GCN, sparsemax
+├── scripts/
+│   ├── cath_labels.py          the ten architectures and their label ids
+│   ├── cath_dataset.py         PDB files to PST input graphs with CATH labels
+│   ├── extract_embeddings.py   PST embedding of every domain
+│   └── train_mlp.py            MLP cross-validation grouped by superfamily
+├── requirements.txt
+└── ruff.toml
+```
+
+## Notes
+
+- The residue graph uses PyTorch Geometric's `radius_graph` with its default limit of 32
+  neighbours per residue, as in PST's example code.
+- Some PDB files list alternate locations of a residue. The dataset keeps the first C-alpha atom
+  of each residue; the earlier version used on Kaggle kept all of them, which added duplicate
+  residues to 212 of the 6,273 domains.
+- Without neighbour sampling, HGP-SL learns edges between all pairs of kept nodes in a graph, so
+  its memory grows with the square of the domain length.
+- PST is released under the BSD 3-Clause license (see `PST/LICENSE`). Its pretrained weights are
+  downloaded from the authors' server on first use.
+
+## References
+
+- D. Chen, P. Hartout, P. Pellizzoni, C. Oliver, K. Borgwardt. Endowing Protein Language Models
+  with Structural Knowledge. arXiv:2401.14819, 2024. Code: https://github.com/BorgwardtLab/PST
+- Z. Zhang, J. Bu, M. Ester, J. Zhang, C. Yao, Z. Yu, C. Wang. Hierarchical Graph Pooling with
+  Structure Learning. arXiv:1911.05954, 2019. Code: https://github.com/cszhangzhen/HGP-SL
+- I. Sillitoe et al. CATH: increased structural coverage of functional space. Nucleic Acids
+  Research 49(D1), 2021.
