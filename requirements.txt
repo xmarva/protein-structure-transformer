@@ -1,0 +1,18 @@
+# Python 3.11. These are the versions the code was checked with on CPU (macOS, arm64).
+# PST also needs torch_scatter and torch_cluster, which come from the PyG wheel index that matches
+# your torch and CUDA build, for example:
+#   pip install torch_scatter==2.1.2 torch_cluster==1.6.3 -f https://data.pyg.org/whl/torch-2.5.0+cpu.html
+#   pip install torch_scatter==2.1.2 torch_cluster==1.6.3 -f https://data.pyg.org/whl/torch-2.5.0+cu124.html
+torch==2.5.1
+torch-geometric==2.6.1
+pytorch-lightning==2.4.0
+fair-esm==2.0.0
+biopandas==0.5.2
+einops==0.8.2
+omegaconf==2.4.0
+joblib==1.6.0
+requests==2.34.2
+numpy==2.4.6
+pandas==3.1.0
+scikit-learn==1.9.1
+tqdm==4.70.1
