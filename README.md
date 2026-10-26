@@ -198,3 +198,10 @@ The graph network can be used on any PyG batch of graphs; the docstring of
   Structure Learning. arXiv:1911.05954, 2019. Code: https://github.com/cszhangzhen/HGP-SL
 - I. Sillitoe et al. CATH: increased structural coverage of functional space. Nucleic Acids
   Research 49(D1), 2021.
+
+## License
+
+The code in this repository is released under the [MIT License](LICENSE), with two exceptions. The HGP-SL layers in
+`models/hgp/` are adapted from the [authors' code](https://github.com/cszhangzhen/HGP-SL), which is published without a
+license, so the MIT License does not extend to them. `imgs/pst-architecture.png` is a figure from the PST paper. The
+`PST` submodule is BSD 3-Clause.
