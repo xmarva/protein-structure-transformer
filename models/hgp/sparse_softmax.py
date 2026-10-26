@@ -1,137 +1,93 @@
+"""Sparsemax normalised within groups of a 1-D tensor.
+
+Sparsemax (Martins & Astudillo, "From Softmax to Sparsemax", ICML 2016) is a replacement for
+softmax that can assign exactly zero weight. Here it is applied per group, the way
+``torch_geometric.utils.softmax`` normalises the weights of each node's outgoing edges.
+
+Adapted from HGP-SL (https://github.com/cszhangzhen/HGP-SL), which builds on the OpenNMT-py
+implementation. The torch_scatter calls of the original are replaced with
+``torch_geometric.utils.scatter``.
+
+Example:
+    >>> x = torch.tensor([2.0, 1.0, -1.0, 1.5, 0.0, 0.5, -0.5])
+    >>> index = torch.tensor([0, 0, 0, 0, 1, 1, 1])
+    >>> Sparsemax()(x, index)
+    tensor([0.7500, 0.0000, 0.0000, 0.2500, 0.2500, 0.7500, 0.0000])
 """
-An original implementation of sparsemax (Martins & Astudillo, 2016) is available at
-https://github.com/OpenNMT/OpenNMT-py/blob/master/onmt/modules/sparse_activations.py.
-See `From Softmax to Sparsemax: A Sparse Model of Attention and Multi-Label Classification, ICML 2016`
-for detailed description.
 
-We make some modifications to make it work at scatter operation scenarios, e.g., calculate softmax according to batch
-indicators.
-
-Usage:
->> x = torch.tensor([ 1.7301,  0.6792, -1.0565,  1.6614, -0.3196, -0.7790, -0.3877, -0.4943,
-         0.1831, -0.0061])
->> batch = torch.tensor([0, 0, 0, 0, 1, 1, 1, 1, 1, 1])
->> sparse_attention = Sparsemax()
->> res = sparse_attention(x, batch)
->> print(res)
-tensor([0.5343, 0.0000, 0.0000, 0.4657, 0.0612, 0.0000, 0.0000, 0.0000, 0.5640,
-        0.3748])
-
-"""
 import torch
-import torch.nn as nn
+from torch import Tensor, nn
 from torch.autograd import Function
-from torch_scatter import scatter_add, scatter_max
+from torch_geometric.utils import scatter
 
 
-def scatter_sort(x, batch, fill_value=-1e16):
-    num_nodes = scatter_add(batch.new_ones(x.size(0)), batch, dim=0)
-    batch_size, max_num_nodes = num_nodes.size(0), num_nodes.max().item()
-
-    cum_num_nodes = torch.cat([num_nodes.new_zeros(1), num_nodes.cumsum(dim=0)[:-1]], dim=0)
-
-    index = torch.arange(batch.size(0), dtype=torch.long, device=x.device)
-    index = (index - cum_num_nodes[batch]) + (batch * max_num_nodes)
-
-    dense_x = x.new_full((batch_size * max_num_nodes,), fill_value)
-    dense_x[index] = x
-    dense_x = dense_x.view(batch_size, max_num_nodes)
-
-    sorted_x, _ = dense_x.sort(dim=-1, descending=True)
-    cumsum_sorted_x = sorted_x.cumsum(dim=-1)
-    cumsum_sorted_x = cumsum_sorted_x.view(-1)
-
-    sorted_x = sorted_x.view(-1)
-    filled_index = sorted_x != fill_value
-
-    sorted_x = sorted_x[filled_index]
-    cumsum_sorted_x = cumsum_sorted_x[filled_index]
-
-    return sorted_x, cumsum_sorted_x
+def _group_sizes(index: Tensor) -> Tensor:
+    return scatter(torch.ones_like(index), index, dim=0, reduce="sum")
 
 
-def _make_ix_like(batch):
-    num_nodes = scatter_add(batch.new_ones(batch.size(0)), batch, dim=0)
-    idx = [torch.arange(1, i + 1, dtype=torch.long, device=batch.device) for i in num_nodes]
-    idx = torch.cat(idx, dim=0)
+def _sort_within_groups(x: Tensor, index: Tensor, fill_value: float = -1e16) -> tuple[Tensor, Tensor]:
+    """Sort ``x`` in descending order inside every group; return the sorted values and their running sums."""
+    sizes = _group_sizes(index)
+    num_groups, max_size = sizes.numel(), int(sizes.max())
+    start = sizes.cumsum(0) - sizes
 
-    return idx
+    # Place every group in a row of a padded (num_groups, max_size) matrix and sort the rows.
+    position = torch.arange(index.numel(), device=x.device) - start[index] + index * max_size
+    dense = x.new_full((num_groups * max_size,), fill_value)
+    dense[position] = x
+    dense = dense.view(num_groups, max_size).sort(dim=-1, descending=True).values
+    cumsum = dense.cumsum(dim=-1).view(-1)
+    dense = dense.view(-1)
+
+    valid = dense != fill_value
+    return dense[valid], cumsum[valid]
 
 
-def _threshold_and_support(x, batch):
-    """Sparsemax building block: compute the threshold
-    Args:
-        x: input tensor to apply the sparsemax
-        batch: group indicators
-    Returns:
-        the threshold value
-    """
-    num_nodes = scatter_add(batch.new_ones(x.size(0)), batch, dim=0)
-    cum_num_nodes = torch.cat([num_nodes.new_zeros(1), num_nodes.cumsum(dim=0)[:-1]], dim=0)
+def _threshold(x: Tensor, index: Tensor) -> tuple[Tensor, Tensor]:
+    """Sparsemax threshold tau and support size of every group."""
+    sizes = _group_sizes(index)
+    start = sizes.cumsum(0) - sizes
 
-    sorted_input, input_cumsum = scatter_sort(x, batch)
-    input_cumsum = input_cumsum - 1.0
-    rhos = _make_ix_like(batch).to(x.dtype)
-    support = rhos * sorted_input > input_cumsum
+    sorted_x, cumsum = _sort_within_groups(x, index)
+    cumsum = cumsum - 1.0
+    rank = (torch.arange(index.numel(), device=x.device) - start[index] + 1).to(x.dtype)
+    in_support = rank * sorted_x > cumsum
 
-    support_size = scatter_add(support.to(batch.dtype), batch)
-    # mask invalid index, for example, if batch is not start from 0 or not continuous, it may result in negative index
-    idx = support_size + cum_num_nodes - 1
-    mask = idx < 0
-    idx[mask] = 0
-    tau = input_cumsum.gather(0, idx)
-    tau /= support_size.to(x.dtype)
-
+    support_size = scatter(in_support.long(), index, dim=0, dim_size=sizes.numel(), reduce="sum")
+    last = (start + support_size - 1).clamp(min=0)
+    tau = cumsum.gather(0, last) / support_size.clamp(min=1).to(x.dtype)
     return tau, support_size
 
 
 class SparsemaxFunction(Function):
-
     @staticmethod
-    def forward(ctx, x, batch):
-        """sparsemax: normalizing sparse transform
-        Parameters:
-            ctx: context object
-            x (Tensor): shape (N, )
-            batch: group indicator
-        Returns:
-            output (Tensor): same shape as input
-        """
-        max_val, _ = scatter_max(x, batch)
-        x -= max_val[batch]
-        tau, supp_size = _threshold_and_support(x, batch)
-        output = torch.clamp(x - tau[batch], min=0)
-        ctx.save_for_backward(supp_size, output, batch)
-
+    def forward(ctx, x: Tensor, index: Tensor) -> Tensor:
+        x = x - scatter(x, index, dim=0, reduce="max")[index]  # numerical stability
+        tau, support_size = _threshold(x, index)
+        output = torch.clamp(x - tau[index], min=0)
+        ctx.save_for_backward(support_size, output, index)
         return output
 
     @staticmethod
-    def backward(ctx, grad_output):
-        supp_size, output, batch = ctx.saved_tensors
+    def backward(ctx, grad_output: Tensor) -> tuple[Tensor, None]:
+        support_size, output, index = ctx.saved_tensors
         grad_input = grad_output.clone()
         grad_input[output == 0] = 0
 
-        v_hat = scatter_add(grad_input, batch) / supp_size.to(output.dtype)
-        grad_input = torch.where(output != 0, grad_input - v_hat[batch], grad_input)
-
+        v_hat = scatter(grad_input, index, dim=0, dim_size=support_size.numel(), reduce="sum")
+        v_hat = v_hat / support_size.clamp(min=1).to(output.dtype)
+        grad_input = torch.where(output != 0, grad_input - v_hat[index], grad_input)
         return grad_input, None
 
 
-sparsemax = SparsemaxFunction.apply
-
-
 class Sparsemax(nn.Module):
+    """Sparsemax of ``x`` within the groups given by ``index``.
 
-    def __init__(self):
-        super(Sparsemax, self).__init__()
+    ``index`` must be sorted (the entries of each group contiguous), as the source nodes of a
+    coalesced ``edge_index`` are.
+    """
 
-    def forward(self, x, batch):
-        return sparsemax(x, batch)
-
-
-if __name__ == '__main__':
-    sparse_attention = Sparsemax()
-    input_x = torch.tensor([1.7301, 0.6792, -1.0565, 1.6614, -0.3196, -0.7790, -0.3877, -0.4943, 0.1831, -0.0061])
-    input_batch = torch.cat([torch.zeros(4, dtype=torch.long), torch.ones(6, dtype=torch.long)], dim=0)
-    res = sparse_attention(input_x, input_batch)
-    print(res)
+    def forward(self, x: Tensor, index: Tensor) -> Tensor:
+        if index.numel() > 1 and bool((index[1:] < index[:-1]).any()):
+            raise ValueError("Sparsemax expects a sorted group index")
+        return SparsemaxFunction.apply(x, index)

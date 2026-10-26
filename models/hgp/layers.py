@@ -1,270 +1,227 @@
+"""Layers of HGP-SL, Hierarchical Graph Pooling with Structure Learning.
+
+Zhang et al., "Hierarchical Graph Pooling with Structure Learning", AAAI 2020 (arXiv:1911.05954).
+Adapted from the authors' code at https://github.com/cszhangzhen/HGP-SL. Differences from it:
+
+- per-graph top-k node selection and edge filtering live here, because the PyTorch Geometric
+  helpers the original imported have moved between PyG releases;
+- torch_scatter and torch_sparse calls are replaced with their PyTorch Geometric and PyTorch
+  equivalents, so the layers only need ``torch`` and ``torch_geometric``;
+- the learned graph is built from edge lists instead of a dense (nodes x nodes) matrix.
+
+All layers take the usual PyG inputs: node features ``x`` of shape (num_nodes, channels),
+``edge_index`` of shape (2, num_edges), optional 1-D edge weights, and ``batch``, the graph id of
+every node, sorted as PyG batching produces it.
+"""
+
+import warnings
+
 import torch
-import torch.nn as nn
 import torch.nn.functional as F
-from models.hgp.sparse_softmax import Sparsemax
+from torch import Tensor, nn
 from torch.nn import Parameter
-from torch_geometric.data import Data
 from torch_geometric.nn.conv import MessagePassing
-from torch_geometric.utils import softmax, dense_to_sparse, add_remaining_self_loops
-from torch_scatter import scatter_add
-from torch_sparse import spspmm, coalesce
+from torch_geometric.utils import add_remaining_self_loops, coalesce, scatter, softmax
 
-def topk(x, ratio, batch):
-    k = max(1, int(ratio * x.size(0)))
-    _, idx = x.topk(k, largest=True)
-    idx = idx.sort()[0]
-    return idx
+from models.hgp.sparse_softmax import Sparsemax
 
-def filter_adj(edge_index, edge_attr, idx, num_nodes=None):
-    mask = (torch.arange(edge_index.size(1), device=edge_index.device).unsqueeze(0) == idx.unsqueeze(1)).any(0)
-    edge_index = edge_index[:, mask]
-    if edge_attr is not None:
-        edge_attr = edge_attr[mask]
+
+def topk(score: Tensor, ratio: float, batch: Tensor) -> Tensor:
+    """Indices of the ceil(ratio * n_i) highest-scoring nodes of every graph i, in ascending order.
+
+    Ascending order keeps the nodes of each graph contiguous and in their original (residue) order.
+    """
+    num_nodes = scatter(torch.ones_like(batch), batch, dim=0, reduce="sum")
+    k = torch.ceil(ratio * num_nodes.to(score.dtype)).long()
+
+    # Order nodes by graph, and by decreasing score inside each graph.
+    order = torch.argsort(score, descending=True)
+    order = order[torch.sort(batch[order], stable=True).indices]
+    start = num_nodes.cumsum(0) - num_nodes
+    rank = torch.arange(score.numel(), device=score.device) - start[batch[order]]
+
+    keep = order[rank < k[batch[order]]]
+    return keep.sort().values
+
+
+def filter_adj(edge_index: Tensor, edge_attr: Tensor | None, perm: Tensor, num_nodes: int):
+    """Keep the edges between the nodes in ``perm`` and renumber them to positions in ``perm``."""
+    new_id = edge_index.new_full((num_nodes,), -1)
+    new_id[perm] = torch.arange(perm.numel(), device=perm.device)
+    row, col = new_id[edge_index[0]], new_id[edge_index[1]]
+    keep = (row >= 0) & (col >= 0)
+    edge_attr = edge_attr[keep] if edge_attr is not None else None
+    return torch.stack([row[keep], col[keep]]), edge_attr
+
+
+def add_two_hop_edges(edge_index: Tensor, edge_attr: Tensor, num_nodes: int) -> tuple[Tensor, Tensor]:
+    """Connect every pair of nodes that are two hops apart.
+
+    Existing edges keep their weight; new edges get weight 0.
+    """
+    ones = torch.ones(edge_index.size(1), device=edge_index.device)
+    adj = torch.sparse_coo_tensor(edge_index, ones, (num_nodes, num_nodes))
+    with warnings.catch_warnings():
+        warnings.filterwarnings("ignore", message="Sparse CSR tensor support is in beta")
+        two_hop = torch.sparse.mm(adj, adj).coalesce().indices()
+
+    edge_index = torch.cat([edge_index, two_hop], dim=1)
+    edge_attr = torch.cat([edge_attr, edge_attr.new_full((two_hop.size(1),), float("inf"))])
+    edge_index, edge_attr = coalesce(edge_index, edge_attr, num_nodes, reduce="min")
+    edge_attr = edge_attr.masked_fill(torch.isinf(edge_attr), 0.0)
     return edge_index, edge_attr
 
-class TwoHopNeighborhood(object):
-    def __call__(self, data):
-        edge_index, edge_attr = data.edge_index, data.edge_attr
-        n = data.num_nodes
 
-        fill = 1e16
-        value = edge_index.new_full((edge_index.size(1),), fill, dtype=torch.float)
-
-        index, value = spspmm(edge_index, value, edge_index, value, n, n, n, True)
-
-        edge_index = torch.cat([edge_index, index], dim=1)
-        if edge_attr is None:
-            data.edge_index, _ = coalesce(edge_index, None, n, n)
-        else:
-            value = value.view(-1, *[1 for _ in range(edge_attr.dim() - 1)])
-            value = value.expand(-1, *list(edge_attr.size())[1:])
-            edge_attr = torch.cat([edge_attr, value], dim=0)
-            data.edge_index, edge_attr = coalesce(edge_index, edge_attr, n, n, op='min', fill_value=fill)
-            edge_attr[edge_attr >= fill] = 0
-            data.edge_attr = edge_attr
-
-        return data
-
-    def __repr__(self):
-        return '{}()'.format(self.__class__.__name__)
+def _normalised_weights(edge_index: Tensor, edge_weight: Tensor | None, num_nodes: int, dtype) -> Tensor:
+    """Edge weights of D^-1/2 A D^-1/2, with D the weighted out-degree."""
+    if edge_weight is None:
+        edge_weight = torch.ones(edge_index.size(1), dtype=dtype, device=edge_index.device)
+    row, col = edge_index
+    deg = scatter(edge_weight, row, dim=0, dim_size=num_nodes, reduce="sum")
+    deg_inv_sqrt = deg.pow(-0.5)
+    deg_inv_sqrt = deg_inv_sqrt.masked_fill(torch.isinf(deg_inv_sqrt), 0.0)
+    return deg_inv_sqrt[row] * edge_weight * deg_inv_sqrt[col]
 
 
 class GCN(MessagePassing):
-    def __init__(self, in_channels, out_channels, cached=False, bias=True, **kwargs):
-        super(GCN, self).__init__(aggr='add', **kwargs)
+    """Graph convolution D^-1/2 A D^-1/2 X W + b without added self-loops.
 
+    Used after a pooling layer, whose learned graph already has self-loops and edge weights.
+    """
+
+    def __init__(self, in_channels: int, out_channels: int, bias: bool = True):
+        super().__init__(aggr="add")
         self.in_channels = in_channels
         self.out_channels = out_channels
-        self.cached = cached
-        self.cached_result = None
-        self.cached_num_edges = None
-
-        self.weight = Parameter(torch.Tensor(in_channels, out_channels))
-        nn.init.xavier_uniform_(self.weight.data)
-
+        self.weight = Parameter(torch.empty(in_channels, out_channels))
         if bias:
-            self.bias = Parameter(torch.Tensor(out_channels))
-            nn.init.zeros_(self.bias.data)
+            self.bias = Parameter(torch.empty(out_channels))
         else:
-            self.register_parameter('bias', None)
-
+            self.register_parameter("bias", None)
         self.reset_parameters()
 
     def reset_parameters(self):
-        self.cached_result = None
-        self.cached_num_edges = None
+        nn.init.xavier_uniform_(self.weight)
+        if self.bias is not None:
+            nn.init.zeros_(self.bias)
 
-    @staticmethod
-    def norm(edge_index, num_nodes, edge_weight, dtype=None):
-        if edge_weight is None:
-            edge_weight = torch.ones((edge_index.size(1),), dtype=dtype, device=edge_index.device)
+    def forward(self, x: Tensor, edge_index: Tensor, edge_weight: Tensor | None = None) -> Tensor:
+        x = x @ self.weight
+        norm = _normalised_weights(edge_index, edge_weight, x.size(0), x.dtype)
+        out = self.propagate(edge_index, x=x, norm=norm)
+        if self.bias is not None:
+            out = out + self.bias
+        return out
 
-        row, col = edge_index
-        deg = scatter_add(edge_weight, row, dim=0, dim_size=num_nodes)
-        deg_inv_sqrt = deg.pow(-0.5)
-        deg_inv_sqrt[deg_inv_sqrt == float('inf')] = 0
-
-        return edge_index, deg_inv_sqrt[row] * edge_weight * deg_inv_sqrt[col]
-
-    def forward(self, x, edge_index, edge_weight=None):
-        x = torch.matmul(x, self.weight)
-
-        if self.cached and self.cached_result is not None:
-            if edge_index.size(1) != self.cached_num_edges:
-                raise RuntimeError(
-                    'Cached {} number of edges, but found {}'.format(self.cached_num_edges, edge_index.size(1)))
-
-        if not self.cached or self.cached_result is None:
-            self.cached_num_edges = edge_index.size(1)
-            edge_index, norm = self.norm(edge_index, x.size(0), edge_weight, x.dtype)
-            self.cached_result = edge_index, norm
-
-        edge_index, norm = self.cached_result
-
-        return self.propagate(edge_index, x=x, norm=norm)
-
-    def message(self, x_j, norm):
+    def message(self, x_j: Tensor, norm: Tensor) -> Tensor:
         return norm.view(-1, 1) * x_j
 
-    def update(self, aggr_out):
-        if self.bias is not None:
-            aggr_out = aggr_out + self.bias
-        return aggr_out
-
-    def __repr__(self):
-        return '{}({}, {})'.format(self.__class__.__name__, self.in_channels, self.out_channels)
+    def __repr__(self) -> str:
+        return f"{self.__class__.__name__}({self.in_channels}, {self.out_channels})"
 
 
 class NodeInformationScore(MessagePassing):
-    def __init__(self, improved=False, cached=False, **kwargs):
-        super(NodeInformationScore, self).__init__(aggr='add', **kwargs)
+    """Node information of HGP-SL, (I - D^-1/2 A D^-1/2) X.
 
-        self.improved = improved
-        self.cached = cached
-        self.cached_result = None
-        self.cached_num_edges = None
+    A node that its neighbours describe well carries little information of its own, so the
+    pooling layer drops the nodes with the smallest score.
+    """
 
-    @staticmethod
-    def norm(edge_index, num_nodes, edge_weight, dtype=None):
-        if edge_weight is None:
-            edge_weight = torch.ones((edge_index.size(1),), dtype=dtype, device=edge_index.device)
+    def __init__(self):
+        super().__init__(aggr="add")
 
-        row, col = edge_index
-        deg = scatter_add(edge_weight, row, dim=0, dim_size=num_nodes)
-        deg_inv_sqrt = deg.pow(-0.5)
-        deg_inv_sqrt[deg_inv_sqrt == float('inf')] = 0
+    def forward(self, x: Tensor, edge_index: Tensor, edge_weight: Tensor | None = None) -> Tensor:
+        norm = _normalised_weights(edge_index, edge_weight, x.size(0), x.dtype)
+        return x - self.propagate(edge_index, x=x, norm=norm)
 
-        edge_index, edge_weight = add_remaining_self_loops(edge_index, edge_weight, 0, num_nodes)
-
-        row, col = edge_index
-        expand_deg = torch.zeros((edge_weight.size(0),), dtype=dtype, device=edge_index.device)
-        expand_deg[-num_nodes:] = torch.ones((num_nodes,), dtype=dtype, device=edge_index.device)
-
-        return edge_index, expand_deg - deg_inv_sqrt[row] * edge_weight * deg_inv_sqrt[col]
-
-    def forward(self, x, edge_index, edge_weight):
-        if self.cached and self.cached_result is not None:
-            if edge_index.size(1) != self.cached_num_edges:
-                raise RuntimeError(
-                    'Cached {} number of edges, but found {}'.format(self.cached_num_edges, edge_index.size(1)))
-
-        if not self.cached or self.cached_result is None:
-            self.cached_num_edges = edge_index.size(1)
-            edge_index, norm = self.norm(edge_index, x.size(0), edge_weight, x.dtype)
-            self.cached_result = edge_index, norm
-
-        edge_index, norm = self.cached_result
-
-        return self.propagate(edge_index, x=x, norm=norm)
-
-    def message(self, x_j, norm):
+    def message(self, x_j: Tensor, norm: Tensor) -> Tensor:
         return norm.view(-1, 1) * x_j
 
-    def update(self, aggr_out):
-        return aggr_out
 
+class HGPSLPool(nn.Module):
+    """HGP-SL pooling: keep the most informative nodes of every graph and learn new edges between them.
 
-class HGPSLPool(torch.nn.Module):
-    def __init__(self, in_channels, ratio=0.8, sample=False, sparse=False, sl=True, lamb=1.0, negative_slop=0.2):
-        super(HGPSLPool, self).__init__()
+    Args:
+        in_channels: node feature size.
+        ratio: fraction of nodes kept in every graph.
+        sample: learn edge weights only between kept nodes that were within a few hops of each other
+            in the input graph (cheaper on large graphs) instead of between all pairs in a graph.
+        sparse: normalise the learned edge weights with sparsemax instead of softmax.
+        sl: learn the pooled graph's edges. If False, return the subgraph induced by the kept nodes.
+        lamb: weight of the input edges added to the learned attention scores.
+        negative_slope: slope of the LeakyReLU applied to the attention scores.
+
+    Returns ``(x, edge_index, edge_weight, batch)`` of the pooled graphs.
+    """
+
+    def __init__(
+        self,
+        in_channels: int,
+        ratio: float = 0.8,
+        sample: bool = False,
+        sparse: bool = False,
+        sl: bool = True,
+        lamb: float = 1.0,
+        negative_slope: float = 0.2,
+    ):
+        super().__init__()
         self.in_channels = in_channels
         self.ratio = ratio
         self.sample = sample
         self.sparse = sparse
         self.sl = sl
-        self.negative_slop = negative_slop
         self.lamb = lamb
+        self.negative_slope = negative_slope
 
-        self.att = Parameter(torch.Tensor(1, self.in_channels * 2))
-        nn.init.xavier_uniform_(self.att.data)
-        self.sparse_attention = Sparsemax()
-        self.neighbor_augment = TwoHopNeighborhood()
-        self.calc_information_score = NodeInformationScore()
+        self.att = Parameter(torch.empty(1, 2 * in_channels))
+        nn.init.xavier_uniform_(self.att)
+        self.sparsemax = Sparsemax()
+        self.information_score = NodeInformationScore()
 
-    def forward(self, x, edge_index, edge_attr, batch=None):
+    def forward(self, x: Tensor, edge_index: Tensor, edge_attr: Tensor | None = None, batch: Tensor | None = None):
         if batch is None:
             batch = edge_index.new_zeros(x.size(0))
+        num_nodes = x.size(0)
 
-        x_information_score = self.calc_information_score(x, edge_index, edge_attr)
-        score = torch.sum(torch.abs(x_information_score), dim=1)
-
-        # Graph Pooling
-        original_x = x
+        score = self.information_score(x, edge_index, edge_attr).abs().sum(dim=1)
         perm = topk(score, self.ratio, batch)
-        x = x[perm]
-        batch = batch[perm]
-        induced_edge_index, induced_edge_attr = filter_adj(edge_index, edge_attr, perm, num_nodes=score.size(0))
+        x, batch = x[perm], batch[perm]
+        induced_index, induced_attr = filter_adj(edge_index, edge_attr, perm, num_nodes)
 
-        # Discard structure learning layer, directly return
-        if self.sl is False:
-            return x, induced_edge_index, induced_edge_attr, batch
+        if not self.sl:
+            return x, induced_index, induced_attr, batch
 
-        # Structure Learning
         if self.sample:
-            # A fast mode for large graphs.
-            # In large graphs, learning the possible edge weights between each pair of nodes is time consuming.
-            # To accelerate this process, we sample it's K-Hop neighbors for each node and then learn the
-            # edge weights between them.
-            k_hop = 3
+            # Candidate edges: pairs of kept nodes within a few hops in the input graph
+            # (two rounds of two-hop augmentation, as in the original code).
             if edge_attr is None:
-                edge_attr = torch.ones((edge_index.size(1),), dtype=torch.float, device=edge_index.device)
-
-            hop_data = Data(x=original_x, edge_index=edge_index, edge_attr=edge_attr)
-            for _ in range(k_hop - 1):
-                hop_data = self.neighbor_augment(hop_data)
-            hop_edge_index = hop_data.edge_index
-            hop_edge_attr = hop_data.edge_attr
-            new_edge_index, new_edge_attr = filter_adj(hop_edge_index, hop_edge_attr, perm, num_nodes=score.size(0))
-
-            new_edge_index, new_edge_attr = add_remaining_self_loops(new_edge_index, new_edge_attr, 0, x.size(0))
-            row, col = new_edge_index
-            weights = (torch.cat([x[row], x[col]], dim=1) * self.att).sum(dim=-1)
-            weights = F.leaky_relu(weights, self.negative_slop) + new_edge_attr * self.lamb
-            adj = torch.zeros((x.size(0), x.size(0)), dtype=torch.float, device=x.device)
-            adj[row, col] = weights
-            new_edge_index, weights = dense_to_sparse(adj)
-            row, col = new_edge_index
-            if self.sparse:
-                new_edge_attr = self.sparse_attention(weights, row)
-            else:
-                new_edge_attr = softmax(weights, row, x.size(0))
-            # filter out zero weight edges
-            adj[row, col] = new_edge_attr
-            new_edge_index, new_edge_attr = dense_to_sparse(adj)
-            # release gpu memory
-            del adj
-            torch.cuda.empty_cache()
+                edge_attr = torch.ones(edge_index.size(1), dtype=x.dtype, device=x.device)
+            hop_index, hop_attr = edge_index, edge_attr
+            for _ in range(2):
+                hop_index, hop_attr = add_two_hop_edges(hop_index, hop_attr, num_nodes)
+            new_index, new_attr = filter_adj(hop_index, hop_attr, perm, num_nodes)
+            new_index, new_attr = add_remaining_self_loops(new_index, new_attr, 0.0, x.size(0))
+            weights = self._attention(x, new_index) + new_attr * self.lamb
+            new_index, weights = coalesce(new_index, weights, x.size(0))
         else:
-            # Learning the possible edge weights between each pair of nodes in the pooled subgraph, relative slower.
-            if edge_attr is None:
-                induced_edge_attr = torch.ones((induced_edge_index.size(1),), dtype=x.dtype,
-                                               device=induced_edge_index.device)
-            num_nodes = scatter_add(batch.new_ones(x.size(0)), batch, dim=0)
-            shift_cum_num_nodes = torch.cat([num_nodes.new_zeros(1), num_nodes.cumsum(dim=0)[:-1]], dim=0)
-            cum_num_nodes = num_nodes.cumsum(dim=0)
-            adj = torch.zeros((x.size(0), x.size(0)), dtype=torch.float, device=x.device)
-            # Construct batch fully connected graph in block diagonal matirx format
-            for idx_i, idx_j in zip(shift_cum_num_nodes, cum_num_nodes):
-                adj[idx_i:idx_j, idx_i:idx_j] = 1.0
-            new_edge_index, _ = dense_to_sparse(adj)
-            row, col = new_edge_index
+            # Candidate edges: all pairs of kept nodes in the same graph, self-pairs included.
+            row, col = (batch.unsqueeze(0) == batch.unsqueeze(1)).nonzero(as_tuple=True)
+            pair_index = torch.stack([row, col])
+            if induced_attr is None:
+                induced_attr = torch.ones(induced_index.size(1), dtype=x.dtype, device=x.device)
+            new_index = torch.cat([pair_index, induced_index], dim=1)
+            weights = torch.cat([self._attention(x, pair_index), induced_attr * self.lamb])
+            new_index, weights = coalesce(new_index, weights, x.size(0), reduce="sum")
 
-            weights = (torch.cat([x[row], x[col]], dim=1) * self.att).sum(dim=-1)
-            weights = F.leaky_relu(weights, self.negative_slop)
-            adj[row, col] = weights
-            induced_row, induced_col = induced_edge_index
+        row = new_index[0]
+        if self.sparse:
+            new_attr = self.sparsemax(weights, row)
+        else:
+            new_attr = softmax(weights, row, num_nodes=x.size(0))
+        keep = new_attr != 0
+        return x, new_index[:, keep], new_attr[keep], batch
 
-            adj[induced_row, induced_col] += induced_edge_attr * self.lamb
-            weights = adj[row, col]
-            if self.sparse:
-                new_edge_attr = self.sparse_attention(weights, row)
-            else:
-                new_edge_attr = softmax(weights, row, x.size(0))
-            # filter out zero weight edges
-            adj[row, col] = new_edge_attr
-            new_edge_index, new_edge_attr = dense_to_sparse(adj)
-            # release gpu memory
-            del adj
-            torch.cuda.empty_cache()
-
-        return x, new_edge_index, new_edge_attr, batch
+    def _attention(self, x: Tensor, edge_index: Tensor) -> Tensor:
+        row, col = edge_index
+        scores = (torch.cat([x[row], x[col]], dim=1) * self.att).sum(dim=-1)
+        return F.leaky_relu(scores, self.negative_slope)
