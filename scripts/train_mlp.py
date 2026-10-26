@@ -33,6 +33,12 @@ from scripts.cath_labels import ARCHITECTURES
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("embeddings", help="file written by scripts.extract_embeddings")
+    parser.add_argument(
+        "--key",
+        default="embeddings",
+        choices=["embeddings", "embeddings_structure", "embeddings_sequence"],
+        help="which embeddings in the file to use (the last two exist for runs with --include-seq)",
+    )
     parser.add_argument("--folds", type=int, default=5)
     parser.add_argument("--epochs", type=int, default=100)
     parser.add_argument("--batch-size", type=int, default=32)
@@ -51,7 +57,7 @@ def main():
     out.mkdir(parents=True, exist_ok=True)
 
     data = torch.load(args.embeddings, weights_only=False)
-    x = torch.as_tensor(data["embeddings"], dtype=torch.float32)
+    x = torch.as_tensor(data[args.key], dtype=torch.float32)
     y = torch.as_tensor(data["labels"], dtype=torch.long)
     groups = np.asarray(data["superfamily"])
 
@@ -119,7 +125,7 @@ def main():
         for name in ("accuracy", "macro_f1")
     }
     report = {
-        "embeddings": str(args.embeddings),
+        "embeddings": f"{args.embeddings} ({args.key})",
         "args": vars(args),
         "classes": list(ARCHITECTURES.values()),
         "folds": fold_metrics,
