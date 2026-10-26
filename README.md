@@ -104,27 +104,41 @@ describe least well, then learns new edges between the kept nodes with an attent
 The intended input is the residue graph with per-residue PST embeddings as node features. Only
 the model exists so far; there is no data pipeline or training script for it.
 
-## Status
+## Results
 
-There are no results yet.
+The [Kaggle notebook](https://www.kaggle.com/code/qmarva/protein-architecture-classification-with-pst) runs the
+pipeline at commit `c8f4107` on a T4: graphs and `pst_t33_so` embeddings for all 6,273 domains (43 minutes), then the
+MLP cross-validated on three embeddings from that one pass. With the residue graph PST gives the structure-aware
+embedding; without it, since the `_so` model kept the ESM-2 weights, it is plain ESM-2, a sequence-only embedding; the
+third is their average, as in PST's own extraction script. All three use the same five folds, split by superfamily.
+The ten classes are balanced, so chance is 10%.
 
-Done:
+| Embedding | Accuracy | Macro F1 |
+|---|---|---|
+| ESM-2, sequence only | 0.592 ± 0.037 | 0.585 ± 0.034 |
+| PST with the structure graph | 0.608 ± 0.047 | 0.598 ± 0.043 |
+| PST, average of the two | **0.613 ± 0.040** | **0.602 ± 0.037** |
 
-- The embedding pipeline. An earlier version of it ran once on Kaggle (T4 GPU) over all 6,273
-  domains and produced a 6,273 × 1,280 matrix in about half an hour, including the model download
-  and graph construction; the [Kaggle notebook](https://www.kaggle.com/code/qmarva/wip-protein-structure-transformers)
-  stopped with an error at the start of training, before any metric was computed. The scripts in
-  this repository have since been checked end to end on CPU with the small `pst_t6_so` model on six
-  domains.
-- The MLP and its grouped cross-validation, checked on synthetic embeddings.
-- The HGP-SL graph network, checked on toy graphs. On random test graphs its pooling layer gives the
-  same output as a port of the original HGP-SL implementation, in all combinations of its options.
+Mean and standard deviation over the folds. The spread comes mostly from the folds themselves (accuracy from 0.55 to
+0.69 for every embedding), so the comparison is fold by fold: the averaged embedding beats sequence alone in all five
+folds, by 0.7 to 3.5 points (2.1 on average), and the structure-aware one in four of five (1.7 on average). The
+structure helps, consistently but not by much.
+
+![Accuracy per architecture for the three embeddings](imgs/results.png)
+
+The architectures differ far more than the embeddings do. The beta sandwich and the alpha-beta barrel are recognised
+in more than 80% of cases. The alpha-beta roll (about 0.3), the alpha-beta complex (about 0.39) and the beta roll (about 0.44)
+are the hardest; the alpha-beta complex is CATH's class for irregular arrangements, so it has no single shape to learn.
+The largest gain from structure is on the up-down bundle (0.61 with sequence alone, 0.71 with the graph).
+
+One mean vector per domain says what the residues look like on average, not how the helices and strands are arranged,
+which is what an architecture is. That is the case for the graph network with hierarchical pooling described above,
+which is not trained yet.
 
 Not done:
 
-- Running `scripts/train_mlp.py` on the PST embeddings and reporting accuracy and macro F1.
-- A comparison with sequence-only ESM-2 embeddings, to see how much the structure adds.
-- A dataset of residue graphs with per-residue embeddings, and training of the graph network.
+- A dataset of residue graphs with per-residue PST embeddings, and training of the HGP-SL graph network on it.
+- Other ways to pool the residues (attention pooling, concatenating layers with `--aggr`), and the larger PST models.
 
 ## How to run
 
