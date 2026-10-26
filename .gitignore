@@ -1,2 +1,20 @@
-data/
+# OS and editors
 .DS_Store
+.idea/
+.vscode/
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+.ruff_cache/
+.ipynb_checkpoints/
+
+# Data, downloaded PST weights and training outputs
+data/
+.cache/
+logs/
+lightning_logs/
+checkpoints/
+*.ckpt
